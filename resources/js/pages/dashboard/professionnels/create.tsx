@@ -50,6 +50,8 @@ export default function ProfessionnelCreate() {
 
     const submit: FormEventHandler = (e) => {
         e.preventDefault();
+        // Bloquer toute soumission si on n'est pas à l'étape 3
+        if (step !== 3) return;
         post('/professionnels');
     };
 
@@ -469,7 +471,7 @@ export default function ProfessionnelCreate() {
                             <button type="button"
                                 onClick={() => setStep((step + 1) as 1|2|3)}
                                 disabled={
-                                    (step === 1 && (!data.prenom || !data.nom || !data.email || !data.telephone || data.pays.length === 0)) ||
+                                    (step === 1 && (!data.prenom || !data.nom || !data.email || !data.telephone)) ||
                                     (step === 2 && (!data.specialite || !data.tarif_horaire))
                                 }
                                 className="flex items-center gap-2 px-6 py-2.5 text-sm font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed">
@@ -477,7 +479,10 @@ export default function ProfessionnelCreate() {
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
                             </button>
                         ) : (
-                            <button type="submit" disabled={processing}
+                            <button
+                                type="button"
+                                onClick={() => post('/professionnels')}
+                                disabled={processing}
                                 className="flex items-center gap-2 px-6 py-2.5 text-sm font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed">
                                 {processing && <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>}
                                 Soumettre le profil

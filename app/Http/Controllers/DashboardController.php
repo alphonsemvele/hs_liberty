@@ -2,7 +2,12 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Support\Facades\Auth;
+use App\Models\Hebergement;
+use App\Models\Reservation;
+use App\Models\Voyageur;
+use App\Models\Professionnel;
+use App\Models\Urgence;
+use App\Models\Avis;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -10,101 +15,61 @@ class DashboardController extends Controller
 {
     public function index(): Response
     {
-        // ── Stats statiques (à connecter plus tard) ───────────────────────────
+        // ── Stats réelles ─────────────────────────────────────────────────────
+        $totalAvis   = Avis::where('masque', false)->count();
+        $positifs    = Avis::where('masque', false)->where('note_globale', '>=', 4)->count();
+
         $stats = [
-            'hebergements_certifies'   => 248,
-            'reservations_en_cours'    => 34,
-            'reservations_ce_mois'     => 127,
-            'voyageurs_inscrits'       => 1_842,
-            'professionnels_certifies' => 312,
-            'urgences_actives'         => 2,
-            'taux_satisfaction'        => 94,
-            'certifications_expirees'  => 7,
+            'hebergements_certifies'   => Hebergement::where('actif', true)->count(),
+            'reservations_en_cours'    => Reservation::whereIn('statut', ['confirmee', 'en_attente'])->count(),
+            'reservations_ce_mois'     => Reservation::whereMonth('created_at', now()->month)
+                                              ->whereYear('created_at', now()->year)->count(),
+            'voyageurs_inscrits'       => Voyageur::whereNull('deleted_at')->count(),
+            'professionnels_certifies' => Professionnel::where('certifie', true)->count(),
+            'urgences_actives'         => Urgence::whereIn('statut', ['declenche', 'en_traitement'])->count(),
+            'taux_satisfaction'        => $totalAvis > 0 ? (int) round($positifs / $totalAvis * 100) : 0,
+            'certifications_expirees'  => 0,
         ];
 
-        // ── Réservations récentes (statiques) ─────────────────────────────────
-        $reservations_recentes = [
-            [
-                'id'           => 1,
-                'initials'     => 'KD',
-                'voyageur'     => 'Kofi Diarra',
-                'hebergement'  => 'Hôtel Azur Accessible — Dakar',
-                'date_arrivee' => '12/04/2026',
-                'date_depart'  => '18/04/2026',
-                'statut'       => 'Confirmée',
-                'montant'      => '186 000 F',
-            ],
-            [
-                'id'           => 2,
-                'initials'     => 'AM',
-                'voyageur'     => 'Amina Mbaye',
-                'hebergement'  => 'Résidence PMR Casablanca Centre',
-                'date_arrivee' => '15/04/2026',
-                'date_depart'  => '20/04/2026',
-                'statut'       => 'En attente',
-                'montant'      => '94 500 F',
-            ],
-            [
-                'id'           => 3,
-                'initials'     => 'JB',
-                'voyageur'     => 'Jean-Baptiste Essomba',
-                'hebergement'  => 'Villa Accessibilité Plus — Abidjan',
-                'date_arrivee' => '08/04/2026',
-                'date_depart'  => '14/04/2026',
-                'statut'       => 'Terminée',
-                'montant'      => '210 000 F',
-            ],
-            [
-                'id'           => 4,
-                'initials'     => 'FT',
-                'voyageur'     => 'Fatou Touré',
-                'hebergement'  => 'Hôtel Liberté — Lomé',
-                'date_arrivee' => '20/04/2026',
-                'date_depart'  => '25/04/2026',
-                'statut'       => 'Confirmée',
-                'montant'      => '78 000 F',
-            ],
-            [
-                'id'           => 5,
-                'initials'     => 'ON',
-                'voyageur'     => 'Oumar Ndiaye',
-                'hebergement'  => 'Appart PMR Nairobi Est',
-                'date_arrivee' => '02/04/2026',
-                'date_depart'  => '07/04/2026',
-                'statut'       => 'Annulée',
-                'montant'      => '132 000 F',
-            ],
-            [
-                'id'           => 6,
-                'initials'     => 'SE',
-                'voyageur'     => 'Sophie Eteki',
-                'hebergement'  => 'Riad Accessible — Marrakech',
-                'date_arrivee' => '25/04/2026',
-                'date_depart'  => '30/04/2026',
-                'statut'       => 'En attente',
-                'montant'      => '155 000 F',
-            ],
-        ];
+        // ── Réservations récentes ─────────────────────────────────────────────
+        $reservations_recentes = Reservation::with(['voyageur.user', 'hebergement'])
+            ->orderByDesc('created_at')
+            ->take(6)
+            ->get()
+            ->map(fn ($r) => [
+                'id'          => $r->id,
+                'initials'    => strtoupper(
+                    substr(optional($r->voyageur?->user)->prenom ?? '?', 0, 1) .
+                    substr(optional($r->voyageur?->user)->nom    ?? '?', 0, 1)
+                ),
+                'voyageur'    => trim(optional($r->voyageur?->user)->prenom . ' ' . optional($r->voyageur?->user)->nom) ?: 'Inconnu',
+                'hebergement' => optional($r->hebergement)->nom ?? 'Inconnu',
+                'date_arrivee'=> $r->date_arrivee->format('d/m/Y'),
+                'date_depart' => $r->date_depart->format('d/m/Y'),
+                'statut'      => match($r->statut) {
+                    'confirmee'  => 'Confirmée',
+                    'en_attente' => 'En attente',
+                    'terminee'   => 'Terminée',
+                    'annulee'    => 'Annulée',
+                    default      => ucfirst($r->statut),
+                },
+                'montant' => number_format($r->montant_total, 0, ',', ' ') . ' ' . ($r->devise ?? 'F'),
+            ]);
 
-        // ── Urgences actives (statiques) ──────────────────────────────────────
-        $urgences_actives = [
-            [
-                'id'         => 1,
-                'voyageur'   => 'Kofi Diarra',
-                'localisation' => 'Dakar, Sénégal',
-                'type'       => 'medical',
-                'statut'     => 'en_traitement',
-                'depuis'     => '14 min',
-            ],
-            [
-                'id'         => 2,
-                'voyageur'   => 'Marie ',
-                'localisation' => 'Casablanca, Maroc',
-                'type'       => 'securite',
-                'statut'     => 'declenche',
-                'depuis'     => '3 min',
-            ],
-        ];
+        // ── Urgences actives ──────────────────────────────────────────────────
+        $urgences_actives = Urgence::with('voyageur.user')
+            ->whereIn('statut', ['declenche', 'en_traitement'])
+            ->orderByDesc('declenchee_le')
+            ->take(5)
+            ->get()
+            ->map(fn ($u) => [
+                'id'          => $u->id,
+                'voyageur'    => trim(optional($u->voyageur?->user)->prenom . ' ' . optional($u->voyageur?->user)->nom) ?: 'Inconnu',
+                'localisation'=> $u->adresse_approximative ?? '—',
+                'type'        => $u->type_urgence ?? 'autre',
+                'statut'      => $u->statut,
+                'depuis'      => $u->declenchee_le?->diffForHumans() ?? $u->created_at->diffForHumans(),
+            ]);
 
         return Inertia::render('dashboard/index', [
             'stats'                 => $stats,

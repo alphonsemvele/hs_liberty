@@ -2,250 +2,158 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Professionnel;
+use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\Hash;
 use Inertia\Inertia;
+use Inertia\Response;
 
 class ProfessionnelController extends Controller
 {
-    private function professionnels(): array
-    {
-        return [
-            [
-                'id'            => 1,
-                'initials'      => 'FS',
-                'nom'           => 'Dr. Fatima Sow',
-                'email'         => 'f.sow@email.com',
-                'telephone'     => '+221 77 123 45 67',
-                'specialite'    => 'Infirmière',
-                'pays'          => ['SN', 'MA'],
-                'tarif'         => '15 000 F/h',
-                'note'          => 4.9,
-                'diplome_valide'=> true,
-                'assurance_rc'  => true,
-                'prestations'   => 18,
-                'inscription'   => '05/01/2026',
-                'numero_rpps'   => '10012345678',
-            ],
-            [
-                'id'            => 2,
-                'initials'      => 'MB',
-                'nom'           => 'Mohamed Benali',
-                'email'         => 'm.benali@email.com',
-                'telephone'     => '+212 6 12 34 56 78',
-                'specialite'    => 'Kinésithérapeute',
-                'pays'          => ['MA', 'DZ'],
-                'tarif'         => '20 000 F/h',
-                'note'          => 4.7,
-                'diplome_valide'=> true,
-                'assurance_rc'  => true,
-                'prestations'   => 12,
-                'inscription'   => '10/01/2026',
-                'numero_rpps'   => '10098765432',
-            ],
-            [
-                'id'            => 3,
-                'initials'      => 'AK',
-                'nom'           => 'Alice Koffi',
-                'email'         => 'a.koffi@email.com',
-                'telephone'     => '+225 07 12 34 56',
-                'specialite'    => 'Auxiliaire de vie',
-                'pays'          => ['CI', 'SN'],
-                'tarif'         => '8 000 F/h',
-                'note'          => 4.8,
-                'diplome_valide'=> true,
-                'assurance_rc'  => true,
-                'prestations'   => 24,
-                'inscription'   => '15/01/2026',
-                'numero_rpps'   => '10011223344',
-            ],
-            [
-                'id'            => 4,
-                'initials'      => 'JO',
-                'nom'           => 'James Ochieng',
-                'email'         => 'j.ochieng@email.com',
-                'telephone'     => '+254 712 345 678',
-                'specialite'    => 'Aide-soignant',
-                'pays'          => ['KE', 'TZ'],
-                'tarif'         => '12 000 F/h',
-                'note'          => 4.5,
-                'diplome_valide'=> true,
-                'assurance_rc'  => false,  // ⚠️ RC Pro manquante
-                'prestations'   => 9,
-                'inscription'   => '20/02/2026',
-                'numero_rpps'   => null,
-            ],
-            [
-                'id'            => 5,
-                'initials'      => 'MN',
-                'nom'           => 'Marie Nkoue',
-                'email'         => 'm.nkoue@email.com',
-                'telephone'     => '+237 6 12 34 56 78',
-                'specialite'    => 'Infirmière',
-                'pays'          => ['CM', 'GA'],
-                'tarif'         => '14 000 F/h',
-                'note'          => 4.6,
-                'diplome_valide'=> true,
-                'assurance_rc'  => true,
-                'prestations'   => 15,
-                'inscription'   => '01/03/2026',
-                'numero_rpps'   => '10055443322',
-            ],
-            [
-                'id'            => 6,
-                'initials'      => 'YT',
-                'nom'           => 'Youssef Tahiri',
-                'email'         => 'y.tahiri@email.com',
-                'telephone'     => '+212 6 98 76 54 32',
-                'specialite'    => 'Kinésithérapeute',
-                'pays'          => ['MA'],
-                'tarif'         => '18 000 F/h',
-                'note'          => 0,
-                'diplome_valide'=> false, // ⏳ En attente de validation
-                'assurance_rc'  => false,
-                'prestations'   => 0,
-                'inscription'   => '01/04/2026',
-                'numero_rpps'   => null,
-            ],
-        ];
-    }
-
-    // ─────────────────────────────────────────────────────────────
     // GET /professionnels
-    // ─────────────────────────────────────────────────────────────
-    public function index(): \Inertia\Response
+    public function index(): Response
     {
-        $profs    = $this->professionnels();
-        $certifes = array_filter($profs, fn ($p) => $p['diplome_valide'] && $p['assurance_rc']);
-        $attente  = array_filter($profs, fn ($p) => !$p['diplome_valide'] || !$p['assurance_rc']);
-
-        // Prestations totales ce mois (statique — à connecter Eloquent plus tard)
-        $prestations_mois = array_sum(array_map(fn ($p) => $p['prestations'], $profs));
+        $profs = Professionnel::with('user')
+            ->whereNull('deleted_at')
+            ->orderByDesc('created_at')
+            ->get()
+            ->map(fn ($p) => [
+                'id'         => $p->id,
+                'initials'   => strtoupper(
+                    substr(optional($p->user)->prenom ?? '?', 0, 1) .
+                    substr(optional($p->user)->nom    ?? '?', 0, 1)
+                ),
+                'nom'        => trim(optional($p->user)->prenom . ' ' . optional($p->user)->nom) ?: 'Inconnu',
+                'email'      => optional($p->user)->email ?? '',
+                'telephone'  => optional($p->user)->telephone ?? '',
+                'specialite' => $p->specialite_autre ?: $p->specialite,
+                'pays'       => '',  // stocké dans professionnel_pays
+                'certifie'   => (bool) $p->certifie,
+                'actif'      => (bool) optional($p->user)->actif,
+                'nb_soins'   => $p->prestations()->count(),
+                'note'       => (float) ($p->note_moyenne ?? 0),
+                'created_at' => $p->created_at->format('d/m/Y'),
+            ]);
 
         return Inertia::render('dashboard/professionnels/index', [
             'professionnels' => $profs,
-            'stats'          => [
-                'total'                  => count($profs),
-                'certifies'              => count($certifes),
-                'en_attente_validation'  => count($attente),
-                'prestations_mois'       => 12, // statique
+            'stats' => [
+                'total'       => $profs->count(),
+                'certifies'   => $profs->where('certifie', true)->count(),
+                'actifs'      => $profs->where('actif', true)->count(),
+                'specialites' => $profs->pluck('specialite')->filter()->unique()->count(),
             ],
         ]);
     }
 
-    // ─────────────────────────────────────────────────────────────
     // GET /professionnels/create
-    // ─────────────────────────────────────────────────────────────
-    public function create(): \Inertia\Response
+    public function create(): Response
     {
         return Inertia::render('dashboard/professionnels/create');
     }
 
-    // ─────────────────────────────────────────────────────────────
     // POST /professionnels
-    // ─────────────────────────────────────────────────────────────
-    public function store(Request $request): \Illuminate\Http\RedirectResponse
+    public function store(Request $request): RedirectResponse
     {
         $request->validate([
-            'prenom'       => 'required|string|max:100',
-            'nom'          => 'required|string|max:100',
-            'email'        => 'required|email|max:255',
-            'telephone'    => 'required|string|max:30',
-            'specialite'   => 'required|string|max:100',
-            'pays'         => 'required|array|min:1',
-            'tarif_horaire'=> 'required|numeric|min:1',
-            'devise'       => 'required|string|max:5',
+            'prenom'          => 'required|string|max:100',
+            'nom'             => 'required|string|max:100',
+            'email'           => 'required|email|max:255|unique:users,email',
+            'telephone'       => 'required|string|max:30',
+            'specialite'      => 'required|in:infirmiere,kinesitherapeute,auxiliaire_vie,aide_soignant,medecin,ergotherapeute,orthophoniste,autre',
+            'specialite_autre'=> 'nullable|string|max:100',
+            'numero_rpps'     => 'nullable|string|max:50',
+            'tarif_horaire'   => 'nullable|numeric|min:0',
+            'devise'          => 'nullable|string|max:3',
+            'bio'             => 'nullable|string|max:5000',
         ]);
 
-        // TODO: enregistrer en base de données + gérer l'upload des fichiers
-        // $professionnel = Professionnel::create([...]);
+        // 1. Créer le compte user (telephone stocké sur users via le formulaire)
+        $user = User::create([
+            'name'     => $request->prenom . ' ' . $request->nom,
+            'prenom'   => $request->prenom,
+            'nom'      => $request->nom,
+            'email'    => $request->email,
+            'password' => Hash::make(\Illuminate\Support\Str::random(16)),
+            'role'     => 'professionnel_sante',
+            'actif'    => true,
+        ]);
+
+        // 2. Créer le profil professionnel avec les colonnes qui existent
+        $prof = Professionnel::create([
+            'user_id'          => $user->id,
+            'specialite'       => $request->specialite,
+            'specialite_autre' => $request->specialite_autre,
+            'numero_rpps'      => $request->numero_rpps,
+            'tarif_horaire'    => $request->tarif_horaire ?? 0,
+            'devise'           => $request->devise ?? 'XOF',
+            'bio'              => $request->bio,
+            'certifie'         => false,
+            'diplome_valide'   => false,
+            'assurance_rc'     => false,
+        ]);
 
         return redirect()
-            ->route('professionnels.index')
-            ->with('success', 'Profil soumis — en attente de validation (48h ouvrées).');
+            ->route('professionnels.show', $prof->id)
+            ->with('success', 'Profil créé — ' . $request->prenom . ' ' . $request->nom);
     }
 
-    // ─────────────────────────────────────────────────────────────
     // GET /professionnels/{id}
-    // ─────────────────────────────────────────────────────────────
-    public function show(int $id): \Inertia\Response
+    public function show(int $id): Response
     {
-        $p = collect($this->professionnels())->firstWhere('id', $id)
-            ?? $this->professionnels()[0];
+        $p = Professionnel::with(['user', 'prestations.voyageur.user'])
+            ->findOrFail($id);
+
+        $prestations = $p->prestations()
+            ->with('voyageur.user')
+            ->orderByDesc('created_at')
+            ->take(10)
+            ->get()
+            ->map(fn ($s) => [
+                'id'       => $s->id,
+                'voyageur' => trim(optional($s->voyageur?->user)->prenom . ' ' . optional($s->voyageur?->user)->nom) ?: 'Inconnu',
+                'type'     => $s->type_soin ?? '',
+                'date'     => $s->created_at->format('d/m/Y'),
+                'statut'   => $s->statut ?? 'realise',
+            ]);
 
         return Inertia::render('dashboard/professionnels/show', [
-            'professionnel'        => $p,
-            'prestations_recentes' => [
-                [
-                    'voyageur' => 'Kofi Diarra',
-                    'type'     => 'Soins infirmiers',
-                    'date'     => '13/04/2026',
-                    'duree'    => '1h',
-                    'montant'  => '15 000 F',
-                    'statut'   => 'realise',
-                ],
-                [
-                    'voyageur' => 'Fatou Touré',
-                    'type'     => 'Soins infirmiers',
-                    'date'     => '21/04/2026',
-                    'duree'    => '1h',
-                    'montant'  => '15 000 F',
-                    'statut'   => 'planifie',
-                ],
-                [
-                    'voyageur' => 'Amina Mbaye',
-                    'type'     => 'Pansement + suivi plaie',
-                    'date'     => '19/04/2026',
-                    'duree'    => '45 min',
-                    'montant'  => '11 250 F',
-                    'statut'   => 'realise',
-                ],
+            'professionnel' => [
+                'id'              => $p->id,
+                'initials'        => strtoupper(
+                    substr(optional($p->user)->prenom ?? '?', 0, 1) .
+                    substr(optional($p->user)->nom    ?? '?', 0, 1)
+                ),
+                'nom'             => trim(optional($p->user)->prenom . ' ' . optional($p->user)->nom) ?: 'Inconnu',
+                'email'           => optional($p->user)->email ?? '',
+                'telephone'       => optional($p->user)->telephone ?? '',
+                'specialite'      => $p->specialite_autre ?: $p->specialite,
+                'pays_exercice'   => '',
+                'numero_ordre'    => $p->numero_rpps ?? '',
+                'certifie'        => (bool) $p->certifie,
+                'diplome_valide'  => (bool) $p->diplome_valide,
+                'assurance_rc'    => (bool) $p->assurance_rc,
+                'tarif_horaire'   => $p->tarif_horaire,
+                'devise'          => $p->devise,
+                'bio'             => $p->bio ?? '',
+                'actif'           => (bool) optional($p->user)->actif,
+                'note'            => (float) ($p->note_moyenne ?? 0),
+                'nb_soins'        => $p->prestations()->count(),
+                'created_at'      => $p->created_at->format('d/m/Y'),
             ],
+            'prestations_recentes' => $prestations,
         ]);
     }
 
-    // ─────────────────────────────────────────────────────────────
-    // GET /professionnels/{id}/edit
-    // ─────────────────────────────────────────────────────────────
-    public function edit(int $id): \Inertia\Response
+    // PATCH /professionnels/{id}/toggle
+    public function toggleActif(int $id): RedirectResponse
     {
-        $p = collect($this->professionnels())->firstWhere('id', $id)
-            ?? $this->professionnels()[0];
+        $p = Professionnel::with('user')->findOrFail($id);
+        optional($p->user)->update(['actif' => !optional($p->user)->actif]);
 
-        return Inertia::render('professionnels/edit', [
-            'professionnel' => $p,
-        ]);
-    }
-
-    // ─────────────────────────────────────────────────────────────
-    // PUT /professionnels/{id}
-    // ─────────────────────────────────────────────────────────────
-    public function update(Request $request, int $id): \Illuminate\Http\RedirectResponse
-    {
-        // TODO: valider et mettre à jour en base de données
-        return redirect()
-            ->route('professionnels.show', $id)
-            ->with('success', 'Profil mis à jour.');
-    }
-
-    // ─────────────────────────────────────────────────────────────
-    // PATCH /professionnels/{id}/valider
-    // ─────────────────────────────────────────────────────────────
-    public function valider(int $id): \Illuminate\Http\RedirectResponse
-    {
-        // TODO: marquer diplome_valide = true en base de données
-        return redirect()
-            ->route('professionnels.show', $id)
-            ->with('success', 'Profil validé avec succès.');
-    }
-
-    // ─────────────────────────────────────────────────────────────
-    // PATCH /professionnels/{id}/suspendre
-    // ─────────────────────────────────────────────────────────────
-    public function suspendre(int $id): \Illuminate\Http\RedirectResponse
-    {
-        // TODO: suspendre le compte en base de données
-        return redirect()
-            ->route('professionnels.index')
-            ->with('success', 'Compte suspendu.');
+        return redirect()->route('professionnels.show', $id)
+            ->with('success', 'Statut mis à jour.');
     }
 }

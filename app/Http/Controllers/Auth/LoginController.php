@@ -12,37 +12,41 @@ use Inertia\Response;
 
 class LoginController extends Controller
 {
-    /**
-     * Display the login view.
-     */
     public function create(): Response
     {
         return Inertia::render('Auth/Login');
     }
 
-    /**
-     * Handle an incoming authentication request.
-     */
     public function store(LoginRequest $request): RedirectResponse
     {
         $request->authenticate();
-
         $request->session()->regenerate();
 
-        return redirect()->intended(route('dashboard', absolute: false));
+        return redirect($this->redirectByRole(auth()->user()->role));
     }
 
-    /**
-     * Destroy an authenticated session.
-     */
     public function destroy(Request $request): RedirectResponse
     {
         Auth::guard('web')->logout();
-
         $request->session()->invalidate();
-
         $request->session()->regenerateToken();
 
         return redirect('/');
+    }
+
+    // ── Redirection selon le rôle ─────────────────────────────
+    private function redirectByRole(string $role): string
+    {
+        return match($role) {
+            'admin'                    => '/dashboard',
+            'voyageur'                 => '/mon-espace',
+            'aidant'                   => '/aidant',
+            'professionnel_sante'      => '/professionnel',
+            'partenaire_hebergement'   => '/partenaire',
+            'transporteur'             => '/transporteur',
+            'inspecteur'               => '/dashboard',
+            'structure_medicosociale'  => '/dashboard',
+            default                    => '/dashboard',
+        };
     }
 }

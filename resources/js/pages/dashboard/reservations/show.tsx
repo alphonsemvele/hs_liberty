@@ -1,202 +1,198 @@
-import { Link } from '@inertiajs/react';
+import { Link, router } from '@inertiajs/react';
 import DashboardLayout from '../layout';
 
-interface Reservation {
-    id: number; ref: string; initials: string; voyageur: string; hebergement: string;
-    date_arrivee: string; date_depart: string; nb_nuits: number;
-    statut: 'Confirmée' | 'En attente' | 'Terminée' | 'Annulée';
-    montant: string; devise: string; created_at: string; besoins_speciaux?: string;
+interface ReservationDetail {
+    id: number; ref: string; initials: string; voyageur: string; voyageur_id: number;
+    hebergement: string; hebergement_id: number; ville: string; pays: string;
+    date_arrivee: string; date_depart: string; nb_nuits: number; nb_voyageurs: number;
+    statut: string; paiement_statut: string; montant: string; montant_raw: number;
+    devise: string; besoins_speciaux: string | null; created_at: string;
 }
-interface Props { reservation: Reservation; }
 
-const STATUT_CONF: Record<string, { badge: string; bar: string; label: string }> = {
-    'Confirmée':  { badge: 'bg-emerald-100 text-emerald-700 border-emerald-200', bar: 'bg-emerald-500',  label: '✓ Confirmée' },
-    'En attente': { badge: 'bg-amber-100 text-amber-700 border-amber-200',       bar: 'bg-amber-400',   label: '⏳ En attente' },
-    'Terminée':   { badge: 'bg-slate-100 text-slate-600 border-slate-200',       bar: 'bg-slate-400',   label: '✓ Terminée' },
-    'Annulée':    { badge: 'bg-red-100 text-red-700 border-red-200',             bar: 'bg-red-400',     label: '✗ Annulée' },
+const STATUT_CFG: Record<string, { badge: string; dot: string; label: string; icon: string }> = {
+    en_attente: { badge: 'bg-amber-50 text-amber-700 border-amber-200',      dot: 'bg-amber-400',   label: 'En attente', icon: '⏳' },
+    confirmee:  { badge: 'bg-emerald-50 text-emerald-700 border-emerald-200', dot: 'bg-emerald-500', label: 'Confirmée',  icon: '✅' },
+    terminee:   { badge: 'bg-slate-100 text-slate-500 border-slate-200',      dot: 'bg-slate-400',   label: 'Terminée',   icon: '🏁' },
+    annulee:    { badge: 'bg-red-50 text-red-600 border-red-200',             dot: 'bg-red-400',     label: 'Annulée',    icon: '❌' },
+    litige:     { badge: 'bg-orange-50 text-orange-600 border-orange-200',    dot: 'bg-orange-400',  label: 'Litige',     icon: '⚠️' },
 };
 
-export default function ReservationShow({ reservation }: Partial<Props>) {
-    const r = reservation ?? {
-        id: 1, ref: 'HS-2026-0001', initials: 'KD', voyageur: 'Kofi Diarra',
-        hebergement: 'Hôtel Azur Accessible — Dakar', date_arrivee: '12/04/2026',
-        date_depart: '18/04/2026', nb_nuits: 6, statut: 'Confirmée' as const,
-        montant: '186 000 F', devise: 'XOF', created_at: '01/04/2026',
-        besoins_speciaux: 'Fauteuil roulant électrique — nécessite prise 220V en chambre. Régime sans sel strict.',
-    };
-    const sc = STATUT_CONF[r.statut];
+const PAIEMENT_CFG: Record<string, { badge: string; label: string }> = {
+    non_paye:                { badge: 'bg-red-50 text-red-500 border-red-100',         label: 'Non payé'              },
+    en_attente:              { badge: 'bg-amber-50 text-amber-600 border-amber-100',   label: 'Paiement en attente'   },
+    paye:                    { badge: 'bg-emerald-50 text-emerald-600 border-emerald-100', label: 'Payé'              },
+    rembourse:               { badge: 'bg-sky-50 text-sky-600 border-sky-100',         label: 'Remboursé'             },
+    partiellement_rembourse: { badge: 'bg-violet-50 text-violet-600 border-violet-100', label: 'Part. remboursé'     },
+};
 
-    const timeline = [
-        { label: 'Réservation créée', date: r.created_at, done: true },
-        { label: 'Confirmation hébergement', date: r.statut !== 'En attente' ? r.created_at : null, done: r.statut === 'Confirmée' || r.statut === 'Terminée' },
-        { label: 'Arrivée voyageur', date: r.date_arrivee, done: r.statut === 'Terminée' },
-        { label: 'Départ — séjour terminé', date: r.date_depart, done: r.statut === 'Terminée' },
-    ];
+const TRANSITIONS: Record<string, string[]> = {
+    en_attente: ['confirmee', 'annulee'],
+    confirmee:  ['terminee',  'annulee', 'litige'],
+    terminee:   [],
+    annulee:    [],
+    litige:     ['confirmee', 'annulee'],
+};
+
+export default function ReservationShow({ reservation }: { reservation: ReservationDetail }) {
+    const r   = reservation;
+    const cfg = STATUT_CFG[r.statut] ?? STATUT_CFG.en_attente;
+    const pcfg = PAIEMENT_CFG[r.paiement_statut] ?? PAIEMENT_CFG.non_paye;
+    const transitions = TRANSITIONS[r.statut] ?? [];
+
+    const changeStatut = (statut: string) => {
+        if (confirm(`Passer la réservation en "${STATUT_CFG[statut]?.label}" ?`)) {
+            router.put(`/reservations/${r.id}/statut`, { statut });
+        }
+    };
+
+    const STATUT_BTN: Record<string, string> = {
+        confirmee: 'bg-emerald-600 hover:bg-emerald-700 text-white',
+        terminee:  'bg-slate-600 hover:bg-slate-700 text-white',
+        annulee:   'bg-red-100 hover:bg-red-200 text-red-700 border border-red-200',
+        litige:    'bg-orange-100 hover:bg-orange-200 text-orange-700 border border-orange-200',
+    };
 
     return (
-        <DashboardLayout title={`Réservation ${r.ref}`} subtitle={r.voyageur}>
+        <DashboardLayout title={`Réservation ${r.ref}`} subtitle={`${r.hebergement} · ${r.ville}, ${r.pays}`}>
 
             {/* Breadcrumb */}
             <div className="flex items-center gap-2 mb-6 text-sm">
                 <Link href="/reservations" className="text-slate-400 hover:text-emerald-600 transition-colors">Réservations</Link>
                 <svg className="w-3.5 h-3.5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7"/></svg>
-                <span className="text-slate-600 font-mono font-semibold">{r.ref}</span>
+                <span className="font-mono text-emerald-700 font-bold">{r.ref}</span>
             </div>
 
             <div className="grid xl:grid-cols-3 gap-6">
-
-                {/* ── COLONNE PRINCIPALE ── */}
                 <div className="xl:col-span-2 space-y-6">
 
-                    {/* Hero */}
+                    {/* Hero card */}
                     <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
-                        <div className="p-6 border-b border-slate-100">
-                            <div className="flex items-start justify-between gap-4 mb-5">
+                        {/* Banner gradient */}
+                        <div className="h-36 bg-gradient-to-br from-teal-600 via-emerald-600 to-emerald-500 relative p-6 flex items-end justify-between">
+                            <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 30% 80%, white, transparent 60%)' }}/>
+                            <div className="relative z-10">
+                                <p className="text-emerald-200 text-xs font-mono mb-1">{r.ref}</p>
+                                <h1 className="text-xl font-black text-white leading-tight">{r.hebergement}</h1>
+                                <p className="text-emerald-200 text-sm">{r.ville}, {r.pays}</p>
+                            </div>
+                            <div className="relative z-10 text-right">
+                                <p className="text-2xl font-black text-white">{r.montant}</p>
+                                <p className="text-emerald-200 text-xs">{r.nb_nuits} nuit(s)</p>
+                            </div>
+                        </div>
+
+                        {/* Statut + paiement */}
+                        <div className="grid grid-cols-2 divide-x divide-slate-100 border-b border-slate-100">
+                            <div className="p-5 flex items-center gap-3">
+                                <span className="text-2xl">{cfg.icon}</span>
                                 <div>
-                                    <div className="flex items-center gap-3 mb-1">
-                                        <span className="text-xs font-mono font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-lg">{r.ref}</span>
-                                        <span className={`text-xs font-bold px-3 py-1.5 rounded-full border ${sc.badge}`}>{sc.label}</span>
-                                    </div>
-                                    <h1 className="text-xl font-black text-slate-900">{r.hebergement}</h1>
-                                </div>
-                                <div className="text-right flex-shrink-0">
-                                    <p className="text-2xl font-black text-slate-900">{r.montant}</p>
-                                    <p className="text-xs text-slate-400">{r.devise}</p>
+                                    <p className="text-xs text-slate-400 font-medium mb-1">Statut réservation</p>
+                                    <span className={`inline-flex items-center gap-1.5 text-sm font-bold px-3 py-1 rounded-full border ${cfg.badge}`}>
+                                        <span className={`w-2 h-2 rounded-full ${cfg.dot}`}/>
+                                        {cfg.label}
+                                    </span>
                                 </div>
                             </div>
-
-                            {/* Stats */}
-                            <div className="grid grid-cols-3 gap-4">
-                                <div className="text-center p-4 bg-slate-50 rounded-2xl">
-                                    <p className="text-xs text-slate-400 font-medium mb-1">Arrivée</p>
-                                    <p className="text-base font-black text-slate-900">{r.date_arrivee}</p>
+                            <div className="p-5 flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center flex-shrink-0">
+                                    <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg>
                                 </div>
-                                <div className="text-center p-4 bg-emerald-50 rounded-2xl">
-                                    <p className="text-xs text-emerald-600 font-medium mb-1">Durée</p>
-                                    <p className="text-2xl font-black text-emerald-600">{r.nb_nuits}</p>
-                                    <p className="text-xs text-emerald-500">nuit{r.nb_nuits > 1 ? 's' : ''}</p>
-                                </div>
-                                <div className="text-center p-4 bg-slate-50 rounded-2xl">
-                                    <p className="text-xs text-slate-400 font-medium mb-1">Départ</p>
-                                    <p className="text-base font-black text-slate-900">{r.date_depart}</p>
+                                <div>
+                                    <p className="text-xs text-slate-400 font-medium mb-1">Paiement</p>
+                                    <span className={`inline-flex items-center text-xs font-bold px-2.5 py-1 rounded-full border ${pcfg.badge}`}>
+                                        {pcfg.label}
+                                    </span>
                                 </div>
                             </div>
                         </div>
 
-                        {/* Voyageur */}
-                        <div className="p-6 border-b border-slate-100">
-                            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Voyageur</p>
+                        {/* Détails séjour */}
+                        <div className="p-6">
+                            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Détails du séjour</p>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                {[
+                                    { icon: '📅', label: 'Arrivée',    value: r.date_arrivee },
+                                    { icon: '📅', label: 'Départ',     value: r.date_depart  },
+                                    { icon: '🌙', label: 'Durée',      value: `${r.nb_nuits} nuit(s)` },
+                                    { icon: '👤', label: 'Voyageurs',  value: `${r.nb_voyageurs} pers.` },
+                                ].map(item => (
+                                    <div key={item.label} className="bg-slate-50 rounded-xl p-4 text-center">
+                                        <p className="text-lg mb-1">{item.icon}</p>
+                                        <p className="text-xs text-slate-400 font-medium mb-1">{item.label}</p>
+                                        <p className="text-sm font-bold text-slate-900">{item.value}</p>
+                                    </div>
+                                ))}
+                            </div>
+
+                            {r.besoins_speciaux && (
+                                <div className="mt-5 p-4 bg-sky-50 rounded-xl border border-sky-100">
+                                    <p className="text-xs font-bold text-sky-700 mb-1">Besoins spéciaux</p>
+                                    <p className="text-sm text-sky-800">{r.besoins_speciaux}</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Voyageur */}
+                    <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
+                        <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-xl bg-violet-50 flex items-center justify-center">
+                                <svg className="w-4 h-4 text-violet-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+                            </div>
+                            <h3 className="text-sm font-bold text-slate-900">Voyageur</h3>
+                        </div>
+                        <div className="p-6 flex items-center justify-between">
                             <div className="flex items-center gap-4">
-                                <div className="w-12 h-12 rounded-2xl bg-violet-100 flex items-center justify-center text-base font-black text-violet-700 flex-shrink-0">
+                                <div className="w-12 h-12 rounded-2xl bg-violet-100 flex items-center justify-center text-base font-black text-violet-700">
                                     {r.initials}
                                 </div>
                                 <div>
                                     <p className="text-base font-bold text-slate-900">{r.voyageur}</p>
-                                    <Link href="/voyageurs/1" className="text-xs text-emerald-600 hover:text-emerald-700 transition-colors font-semibold">
-                                        Voir le profil complet →
-                                    </Link>
+                                    <p className="text-xs text-slate-400">Voyageur enregistré</p>
                                 </div>
                             </div>
-                        </div>
-
-                        {/* Besoins spéciaux */}
-                        {r.besoins_speciaux && (
-                            <div className="p-6">
-                                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Besoins spéciaux / Instructions</p>
-                                <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-100 rounded-2xl">
-                                    <svg className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                                    <p className="text-sm text-amber-800 leading-relaxed">{r.besoins_speciaux}</p>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Timeline */}
-                    <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
-                        <div className="px-6 py-4 border-b border-slate-100">
-                            <h3 className="text-sm font-bold text-slate-900">Suivi de la réservation</h3>
-                        </div>
-                        <div className="p-6">
-                            <div className="relative">
-                                <div className="absolute left-[15px] top-6 bottom-6 w-0.5 bg-slate-100"/>
-                                <div className="space-y-5">
-                                    {timeline.map((step, i) => (
-                                        <div key={i} className="relative flex items-center gap-4">
-                                            <div className={`relative z-10 w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${step.done ? 'bg-emerald-500' : 'bg-slate-200'}`}>
-                                                {step.done ? (
-                                                    <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7"/></svg>
-                                                ) : (
-                                                    <div className="w-2 h-2 rounded-full bg-slate-400"/>
-                                                )}
-                                            </div>
-                                            <div className="flex-1 flex items-center justify-between">
-                                                <p className={`text-sm font-semibold ${step.done ? 'text-slate-900' : 'text-slate-400'}`}>{step.label}</p>
-                                                {step.date && <span className="text-xs text-slate-400 font-medium">{step.date}</span>}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
+                            <Link href={`/voyageurs/${r.voyageur_id}`} className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 transition-colors">
+                                Voir le profil →
+                            </Link>
                         </div>
                     </div>
                 </div>
 
-                {/* ── DROITE ── */}
-                <div className="space-y-6">
+                {/* Sidebar */}
+                <div className="space-y-5">
 
                     {/* Actions statut */}
-                    <div className="bg-white rounded-2xl border border-slate-100 p-5">
-                        <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Changer le statut</p>
-                        <div className="space-y-2">
-                            {r.statut === 'En attente' && (
-                                <>
-                                    <button className="w-full flex items-center gap-3 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-semibold transition-colors">
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                                        Confirmer la réservation
+                    {transitions.length > 0 && (
+                        <div className="bg-white rounded-2xl border border-slate-100 p-5">
+                            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Changer le statut</p>
+                            <div className="space-y-2">
+                                {transitions.map(s => (
+                                    <button key={s} onClick={() => changeStatut(s)}
+                                        className={`w-full px-4 py-2.5 rounded-xl text-sm font-semibold transition-all ${STATUT_BTN[s] ?? 'bg-slate-100 hover:bg-slate-200 text-slate-700'}`}>
+                                        {STATUT_CFG[s]?.icon} {STATUT_CFG[s]?.label}
                                     </button>
-                                    <button className="w-full flex items-center gap-3 px-4 py-2.5 border border-red-200 hover:bg-red-50 text-red-500 rounded-xl text-sm font-medium transition-all">
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
-                                        Annuler la réservation
-                                    </button>
-                                </>
-                            )}
-                            {r.statut === 'Confirmée' && (
-                                <>
-                                    <button className="w-full flex items-center gap-3 px-4 py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-sm font-semibold transition-colors">
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7"/></svg>
-                                        Marquer comme terminée
-                                    </button>
-                                    <button className="w-full flex items-center gap-3 px-4 py-2.5 border border-red-200 hover:bg-red-50 text-red-500 rounded-xl text-sm font-medium transition-all">
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
-                                        Annuler la réservation
-                                    </button>
-                                </>
-                            )}
-                            {(r.statut === 'Terminée' || r.statut === 'Annulée') && (
-                                <p className="text-xs text-slate-400 text-center py-2 italic">Aucune action disponible</p>
-                            )}
+                                ))}
+                            </div>
                         </div>
-                    </div>
+                    )}
 
-                    {/* Récapitulatif */}
+                    {/* Infos rapides */}
                     <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
                         <div className="px-5 py-4 border-b border-slate-100">
-                            <h3 className="text-sm font-bold text-slate-900">Récapitulatif</h3>
+                            <h3 className="text-sm font-bold text-slate-900">Informations</h3>
                         </div>
                         <div className="divide-y divide-slate-50">
                             {[
-                                { l: 'Référence',   v: r.ref,          mono: true },
-                                { l: 'Voyageur',    v: r.voyageur },
-                                { l: 'Arrivée',     v: r.date_arrivee },
-                                { l: 'Départ',      v: r.date_depart },
-                                { l: 'Durée',       v: `${r.nb_nuits} nuits` },
-                                { l: 'Montant',     v: r.montant,       bold: true },
-                                { l: 'Devise',      v: r.devise },
-                                { l: 'Créée le',    v: r.created_at },
-                            ].map(i => (
-                                <div key={i.l} className="flex items-center justify-between px-5 py-3">
-                                    <span className="text-xs text-slate-400 font-medium">{i.l}</span>
-                                    <span className={`text-sm text-slate-900 ${i.mono ? 'font-mono text-xs' : ''} ${i.bold ? 'font-black' : 'font-semibold'}`}>{i.v}</span>
+                                { label: 'Référence',   value: r.ref },
+                                { label: 'Créée le',    value: r.created_at },
+                                { label: 'Hébergement', value: r.hebergement },
+                                { label: 'Montant',     value: r.montant },
+                                { label: 'Devise',      value: r.devise },
+                                { label: 'Paiement',    value: PAIEMENT_CFG[r.paiement_statut]?.label ?? r.paiement_statut },
+                            ].map(item => (
+                                <div key={item.label} className="flex items-center justify-between px-5 py-3">
+                                    <span className="text-xs text-slate-400 font-medium">{item.label}</span>
+                                    <span className="text-sm font-semibold text-slate-900 text-right max-w-[140px] truncate">{item.value}</span>
                                 </div>
                             ))}
                         </div>
@@ -205,17 +201,15 @@ export default function ReservationShow({ reservation }: Partial<Props>) {
                     {/* Liens rapides */}
                     <div className="bg-white rounded-2xl border border-slate-100 p-5 space-y-2">
                         <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Liens rapides</p>
-                        <Link href="/voyageurs/1" className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 transition-colors text-slate-600 hover:text-emerald-600 text-sm font-medium">
-                            <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
-                            Profil du voyageur
+                        <Link href={`/hebergements/${r.hebergement_id}`}
+                            className="w-full flex items-center gap-3 px-4 py-2.5 border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50 text-slate-600 hover:text-emerald-700 rounded-xl text-sm font-medium transition-all">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16M3 21h18"/></svg>
+                            Voir l'hébergement
                         </Link>
-                        <Link href="/hebergements/1" className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 transition-colors text-slate-600 hover:text-emerald-600 text-sm font-medium">
-                            <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16M3 21h18"/></svg>
-                            Fiche hébergement
-                        </Link>
-                        <Link href="/programme" className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 transition-colors text-slate-600 hover:text-emerald-600 text-sm font-medium">
-                            <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
-                            Programme du séjour
+                        <Link href={`/voyageurs/${r.voyageur_id}`}
+                            className="w-full flex items-center gap-3 px-4 py-2.5 border border-slate-200 hover:border-violet-300 hover:bg-violet-50 text-slate-600 hover:text-violet-700 rounded-xl text-sm font-medium transition-all">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+                            Voir le voyageur
                         </Link>
                     </div>
                 </div>

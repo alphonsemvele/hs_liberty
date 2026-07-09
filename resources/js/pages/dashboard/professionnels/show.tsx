@@ -3,7 +3,7 @@ import DashboardLayout from '../layout';
 
 interface Professionnel {
     id: number; initials: string; nom: string; email: string; specialite: string;
-    pays: string[]; tarif: string; note: number; diplome_valide: boolean;
+    pays: string[] | string; tarif: string; note: number; diplome_valide: boolean;
     assurance_rc: boolean; prestations: number; inscription: string;
     telephone?: string; numero_rpps?: string;
 }
@@ -132,7 +132,10 @@ export default function ProfessionnelShow({ professionnel, prestations_recentes 
                                 <div>
                                     <p className="text-sm font-bold text-slate-700">Pays d'exercice</p>
                                     <div className="flex gap-1.5 mt-1">
-                                        {p.pays.map(c => <span key={c} className="text-xs font-mono bg-slate-200 px-1.5 py-0.5 rounded text-slate-700 font-semibold">{c}</span>)}
+                                        {(Array.isArray(p.pays) && p.pays.length > 0)
+                                            ? p.pays.map(c => <span key={c} className="text-xs font-mono bg-slate-200 px-1.5 py-0.5 rounded text-slate-700 font-semibold">{c}</span>)
+                                            : <span className="text-xs text-slate-400">—</span>
+                                        }
                                     </div>
                                 </div>
                             </div>

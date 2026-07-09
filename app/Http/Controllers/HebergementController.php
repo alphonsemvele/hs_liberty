@@ -1,88 +1,237 @@
 <?php
-// ═══════════════════════════════════════════════════════════════════════════════
-// CONTROLLERS hs liberty — Données statiques (BDD à connecter plus tard)
-// Chaque controller est dans son propre fichier dans App\Http\Controllers\
-// ═══════════════════════════════════════════════════════════════════════════════
- 
-// ─────────────────────────────────────────────────────────────────────────────
-// FILE: app/Http/Controllers/HebergementController.php
-// ─────────────────────────────────────────────────────────────────────────────
+
 namespace App\Http\Controllers;
+
+use App\Models\Hebergement;
+use App\Models\Equipement;
 use Illuminate\Http\Request;
+use Illuminate\Http\RedirectResponse;
 use Inertia\Inertia;
- 
+use Inertia\Response;
+
 class HebergementController extends Controller
 {
-    private function hebergements(): array
+    public function index(): Response
     {
-        return [
-            ['id'=>1,'nom'=>'Hôtel Azur Accessible','ville'=>'Dakar','pays'=>'SN','niveau_certif'=>'Excellence','note'=>4.8,'reservations'=>24,'actif'=>true,'created_at'=>'12/01/2026'],
-            ['id'=>2,'nom'=>'Résidence PMR Casablanca Centre','ville'=>'Casablanca','pays'=>'MA','niveau_certif'=>'Accessible Plus','note'=>4.5,'reservations'=>18,'actif'=>true,'created_at'=>'08/02/2026'],
-            ['id'=>3,'nom'=>'Villa Accessibilité Plus','ville'=>'Abidjan','pays'=>'CI','niveau_certif'=>'Accessible','note'=>4.2,'reservations'=>31,'actif'=>true,'created_at'=>'15/01/2026'],
-            ['id'=>4,'nom'=>'Hôtel Liberté','ville'=>'Lomé','pays'=>'TG','niveau_certif'=>'Excellence','note'=>4.9,'reservations'=>12,'actif'=>true,'created_at'=>'20/02/2026'],
-            ['id'=>5,'nom'=>'Appart PMR Nairobi Est','ville'=>'Nairobi','pays'=>'KE','niveau_certif'=>'Accessible Plus','note'=>4.3,'reservations'=>8,'actif'=>false,'created_at'=>'05/03/2026'],
-            ['id'=>6,'nom'=>'Riad Accessible','ville'=>'Marrakech','pays'=>'MA','niveau_certif'=>'Accessible','note'=>4.1,'reservations'=>15,'actif'=>true,'created_at'=>'10/03/2026'],
-            ['id'=>7,'nom'=>'Gîte Inclusion Douala','ville'=>'Douala','pays'=>'CM','niveau_certif'=>null,'note'=>0,'reservations'=>0,'actif'=>false,'created_at'=>'01/04/2026'],
-            ['id'=>8,'nom'=>'Hôtel Grand Confort PMR','ville'=>'Accra','pays'=>'GH','niveau_certif'=>'Accessible','note'=>4.0,'reservations'=>7,'actif'=>true,'created_at'=>'22/03/2026'],
-        ];
-    }
- 
-    public function index(): \Inertia\Response
-    {
+        $hebergements = Hebergement::withCount('reservations')
+            ->orderByDesc('created_at')
+            ->get()
+            ->map(fn ($h) => [
+                'id'           => $h->id,
+                'nom'          => $h->nom,
+                'ville'        => $h->ville,
+                'pays'         => $h->pays,
+                'niveau_certif'=> $h->niveau_certification !== 'non_certifie'
+                                    ? ucwords(str_replace('_', ' ', $h->niveau_certification))
+                                    : null,
+                'note'         => (float) $h->note_moyenne,
+                'reservations' => $h->reservations_count,
+                'actif'        => (bool) $h->actif,
+                'created_at'   => $h->created_at->format('d/m/Y'),
+            ]);
+
         return Inertia::render('dashboard/hebergements/index', [
-            'hebergements' => $this->hebergements(),
+            'hebergements' => $hebergements,
             'stats' => [
-                'total'       => 8,
-                'certifies'   => 6,
-                'non_certifies'=> 2,
-                'inactifs'    => 2,
+                'total'         => Hebergement::count(),
+                'certifies'     => Hebergement::where('niveau_certification', '!=', 'non_certifie')->count(),
+                'non_certifies' => Hebergement::where('niveau_certification', 'non_certifie')->count(),
+                'inactifs'      => Hebergement::where('actif', false)->count(),
             ],
         ]);
     }
- 
-    public function create(): \Inertia\Response
+
+    public function create(): Response
     {
-        return Inertia::render('dashboard/hebergements/create');
+        return Inertia::render('dashboard/hebergements/create', [
+            'equipements_dispo' => Equipement::orderBy('categorie')
+                ->orderBy('libelle')
+                ->get(['id', 'code', 'libelle', 'categorie']),
+        ]);
     }
- 
-    public function store(Request $request)
+
+    public function store(Request $request): RedirectResponse
     {
-        // TODO: valider et sauvegarder
-        return redirect()->route('hebergements.index');
+        $validated = $request->validate([
+            'nom'           => 'required|string|max:300',
+            'adresse'       => 'required|string|max:500',
+            'ville'         => 'required|string|max:150',
+            'pays'          => 'required|string|min:2|max:2',
+            'code_postal'   => 'nullable|string|max:20',
+            // ← nullable|string au lieu de numeric — on nettoie manuellement
+            'latitude'      => 'nullable|string',
+            'longitude'     => 'nullable|string',
+            'description'   => 'nullable|string',
+            'type'          => 'nullable|string',
+            'prix_nuit_min' => 'nullable|numeric|min:0',
+            'prix_nuit_max' => 'nullable|numeric|min:0',
+            'devise'        => 'nullable|string|max:3',
+            'niveau_certif' => 'nullable|string',
+            'equipements'   => 'nullable|array',
+            'equipements.*' => 'integer|exists:equipements,id',
+        ]);
+
+        $niveauMap = [
+            'accessible'      => 'accessible',
+            'accessible_plus' => 'accessible_plus',
+            'excellence'      => 'excellence',
+            'Accessible'      => 'accessible',
+            'Accessible Plus' => 'accessible_plus',
+            'Excellence'      => 'excellence',
+        ];
+
+        // Latitude/longitude : on garde null si la valeur n'est pas numérique
+        $latitude  = is_numeric($validated['latitude']  ?? null) ? (float) $validated['latitude']  : null;
+        $longitude = is_numeric($validated['longitude'] ?? null) ? (float) $validated['longitude'] : null;
+
+        $hebergement = Hebergement::create([
+            'user_id'             => auth()->id(),
+            'nom'                 => $validated['nom'],
+            'adresse'             => $validated['adresse'],
+            'ville'               => $validated['ville'],
+            'pays'                => strtoupper(trim($validated['pays'])),
+            'code_postal'         => $validated['code_postal'] ?? null,
+            'latitude'            => $latitude,
+            'longitude'           => $longitude,
+            'description'         => $validated['description'] ?? null,
+            'type'                => $validated['type'] ?? 'hotel',
+            'prix_nuit_min'       => $validated['prix_nuit_min'] ?? 0,
+            'prix_nuit_max'       => $validated['prix_nuit_max'] ?? 0,
+            'devise'              => $validated['devise'] ?? 'XOF',
+            'niveau_certification'=> $niveauMap[$validated['niveau_certif'] ?? ''] ?? 'non_certifie',
+            'actif'               => true,
+        ]);
+
+        if (!empty($validated['equipements'])) {
+            $hebergement->equipements()->sync($validated['equipements']);
+        }
+
+        return redirect()
+            ->route('hebergements.index')
+            ->with('success', 'Hébergement créé avec succès.');
     }
- 
-    public function show(int $id): \Inertia\Response
+
+    public function show(int $id): Response
     {
-        $heb = collect($this->hebergements())->firstWhere('id', $id)
-            ?? $this->hebergements()[0];
- 
+        $h = Hebergement::with('equipements')->findOrFail($id);
+
         return Inertia::render('dashboard/hebergements/show', [
-            'hebergement' => $heb,
-            'equipements' => [
-                'Fauteuil roulant de prêt','Lit médicalisé','Barre d\'appui salle de bain',
-                'Douche à l\'italienne','Ascenseur PMR','Parking handicapé',
+            'hebergement' => [
+                'id'           => $h->id,
+                'nom'          => $h->nom,
+                'ville'        => $h->ville,
+                'pays'         => $h->pays,
+                'niveau_certif'=> $h->niveau_certification !== 'non_certifie'
+                                    ? ucwords(str_replace('_', ' ', $h->niveau_certification))
+                                    : null,
+                'note'         => (float) $h->note_moyenne,
+                'reservations' => $h->reservations()->count(),
+                'actif'        => (bool) $h->actif,
+                'created_at'   => $h->created_at->format('d/m/Y'),
             ],
-            'reservations_recentes' => [
-                ['voyageur'=>'Kofi Diarra','dates'=>'12–18 avr 2026','statut'=>'Confirmée','montant'=>'186 000 F'],
-                ['voyageur'=>'Fatou Touré','dates'=>'20–25 avr 2026','statut'=>'Confirmée','montant'=>'78 000 F'],
-            ],
+            'equipements'           => $h->equipements->pluck('libelle')->toArray(),
+            'reservations_recentes' => [],
         ]);
     }
- 
-    public function edit(int $id): \Inertia\Response
+
+    public function edit(int $id): Response
     {
-        $heb = collect($this->hebergements())->firstWhere('id', $id)
-            ?? $this->hebergements()[0];
-        return Inertia::render('dashboard/hebergements/edit', ['hebergement' => $heb]);
+        $h = Hebergement::with('equipements')->findOrFail($id);
+
+        return Inertia::render('hebergements/edit', [
+            'hebergement' => [
+                'id'            => $h->id,
+                'nom'           => $h->nom,
+                'adresse'       => $h->adresse,
+                'ville'         => $h->ville,
+                'pays'          => $h->pays,
+                'code_postal'   => $h->code_postal,
+                'latitude'      => $h->latitude,
+                'longitude'     => $h->longitude,
+                'description'   => $h->description,
+                'type'          => $h->type,
+                'prix_nuit_min' => $h->prix_nuit_min,
+                'prix_nuit_max' => $h->prix_nuit_max,
+                'devise'        => $h->devise,
+                'niveau_certif' => $h->niveau_certification,
+                'actif'         => $h->actif,
+                'equipements'   => $h->equipements->pluck('id')->toArray(),
+            ],
+            'equipements_dispo' => Equipement::orderBy('categorie')
+                ->orderBy('libelle')
+                ->get(['id', 'code', 'libelle', 'categorie']),
+        ]);
     }
- 
-    public function update(Request $request, int $id)
+
+    public function update(Request $request, int $id): RedirectResponse
     {
-        return redirect()->route('hebergements.index');
+        $h = Hebergement::findOrFail($id);
+
+        $validated = $request->validate([
+            'nom'           => 'required|string|max:300',
+            'adresse'       => 'required|string|max:500',
+            'ville'         => 'required|string|max:150',
+            'pays'          => 'required|string|min:2|max:2',
+            'code_postal'   => 'nullable|string|max:20',
+            'latitude'      => 'nullable|string',
+            'longitude'     => 'nullable|string',
+            'description'   => 'nullable|string',
+            'type'          => 'nullable|string',
+            'prix_nuit_min' => 'nullable|numeric|min:0',
+            'prix_nuit_max' => 'nullable|numeric|min:0',
+            'devise'        => 'nullable|string|max:3',
+            'niveau_certif' => 'nullable|string',
+            'equipements'   => 'nullable|array',
+            'equipements.*' => 'integer|exists:equipements,id',
+        ]);
+
+        $niveauMap = [
+            'accessible'      => 'accessible',
+            'accessible_plus' => 'accessible_plus',
+            'excellence'      => 'excellence',
+            'Accessible'      => 'accessible',
+            'Accessible Plus' => 'accessible_plus',
+            'Excellence'      => 'excellence',
+        ];
+
+        $latitude  = is_numeric($validated['latitude']  ?? null) ? (float) $validated['latitude']  : null;
+        $longitude = is_numeric($validated['longitude'] ?? null) ? (float) $validated['longitude'] : null;
+
+        $h->update([
+            'nom'                 => $validated['nom'],
+            'adresse'             => $validated['adresse'],
+            'ville'               => $validated['ville'],
+            'pays'                => strtoupper(trim($validated['pays'])),
+            'code_postal'         => $validated['code_postal'] ?? null,
+            'latitude'            => $latitude,
+            'longitude'           => $longitude,
+            'description'         => $validated['description'] ?? null,
+            'type'                => $validated['type'] ?? $h->type,
+            'prix_nuit_min'       => $validated['prix_nuit_min'] ?? $h->prix_nuit_min,
+            'prix_nuit_max'       => $validated['prix_nuit_max'] ?? $h->prix_nuit_max,
+            'devise'              => $validated['devise'] ?? $h->devise,
+            'niveau_certification'=> $niveauMap[$validated['niveau_certif'] ?? ''] ?? $h->niveau_certification,
+        ]);
+
+        $h->equipements()->sync($validated['equipements'] ?? []);
+
+        return redirect()
+            ->route('hebergements.show', $h->id)
+            ->with('success', 'Hébergement mis à jour.');
     }
- 
-    public function destroy(int $id)
+
+    public function toggleActif(int $id): RedirectResponse
     {
+        $h = Hebergement::findOrFail($id);
+        $h->update(['actif' => !$h->actif]);
+
+        return redirect()->route('hebergements.show', $h->id);
+    }
+
+    public function destroy(int $id): RedirectResponse
+    {
+        Hebergement::findOrFail($id)->delete();
+
         return redirect()->route('hebergements.index');
     }
 }

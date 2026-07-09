@@ -1,0 +1,44 @@
+<?php
+
+namespace App\Http\Controllers\Transporteur;
+
+use App\Http\Controllers\Controller;
+use Illuminate\Http\Request;
+use Illuminate\Http\RedirectResponse;
+use Inertia\Inertia;
+use Inertia\Response;
+
+class ProfilTransporteurController extends Controller
+{
+    public function index(): Response
+    {
+        $user = auth()->user();
+        return Inertia::render('transporteur/profil', [
+            'profil' => [
+                'prenom'    => $user->prenom ?? '',
+                'nom'       => $user->nom ?? '',
+                'email'     => $user->email ?? '',
+                'telephone' => $user->telephone ?? '',
+                'ville'     => $user->ville ?? '',
+            ],
+        ]);
+    }
+
+    public function update(Request $request): RedirectResponse
+    {
+        $request->validate([
+            'prenom'    => 'required|string|max:100',
+            'nom'       => 'required|string|max:100',
+            'telephone' => 'nullable|string|max:30',
+            'ville'     => 'nullable|string|max:100',
+        ]);
+
+        auth()->user()->update([
+            'prenom' => $request->prenom,
+            'nom'    => $request->nom,
+            'name'   => $request->prenom . ' ' . $request->nom,
+        ]);
+
+        return back()->with('success', 'Profil mis à jour.');
+    }
+}

@@ -2,61 +2,176 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Reservation;
+use App\Models\Hebergement;
+use App\Models\Voyageur;
 use Illuminate\Http\Request;
+use Illuminate\Http\RedirectResponse;
 use Inertia\Inertia;
+use Inertia\Response;
 
 class ReservationController extends Controller
 {
-    private function reservations(): array
+    // ─────────────────────────────────────────────────────────
+    // GET /reservations
+    // ─────────────────────────────────────────────────────────
+    public function index(): Response
     {
-        return [
-            ['id'=>1,'ref'=>'HS-2026-0001','initials'=>'KD','voyageur'=>'Kofi Diarra','hebergement'=>'Hôtel Azur Accessible — Dakar','date_arrivee'=>'12/04/2026','date_depart'=>'18/04/2026','nb_nuits'=>6,'statut'=>'Confirmée','montant'=>'186 000 F','devise'=>'XOF','created_at'=>'01/04/2026'],
-            ['id'=>2,'ref'=>'HS-2026-0002','initials'=>'AM','voyageur'=>'Amina Mbaye','hebergement'=>'Résidence PMR Casablanca Centre','date_arrivee'=>'15/04/2026','date_depart'=>'20/04/2026','nb_nuits'=>5,'statut'=>'En attente','montant'=>'94 500 F','devise'=>'XOF','created_at'=>'03/04/2026'],
-            ['id'=>3,'ref'=>'HS-2026-0003','initials'=>'JB','voyageur'=>'Jean-Baptiste Essomba','hebergement'=>'Villa Accessibilité Plus — Abidjan','date_arrivee'=>'08/04/2026','date_depart'=>'14/04/2026','nb_nuits'=>6,'statut'=>'Terminée','montant'=>'210 000 F','devise'=>'XOF','created_at'=>'28/03/2026'],
-            ['id'=>4,'ref'=>'HS-2026-0004','initials'=>'FT','voyageur'=>'Fatou Touré','hebergement'=>'Hôtel Liberté — Lomé','date_arrivee'=>'20/04/2026','date_depart'=>'25/04/2026','nb_nuits'=>5,'statut'=>'Confirmée','montant'=>'78 000 F','devise'=>'XOF','created_at'=>'08/04/2026'],
-            ['id'=>5,'ref'=>'HS-2026-0005','initials'=>'ON','voyageur'=>'Oumar Ndiaye','hebergement'=>'Appart PMR Nairobi Est','date_arrivee'=>'02/04/2026','date_depart'=>'07/04/2026','nb_nuits'=>5,'statut'=>'Annulée','montant'=>'132 000 F','devise'=>'XOF','created_at'=>'22/03/2026'],
-            ['id'=>6,'ref'=>'HS-2026-0006','initials'=>'SE','voyageur'=>'Sophie Eteki','hebergement'=>'Riad Accessible — Marrakech','date_arrivee'=>'25/04/2026','date_depart'=>'30/04/2026','nb_nuits'=>5,'statut'=>'En attente','montant'=>'155 000 F','devise'=>'XOF','created_at'=>'10/04/2026'],
-            ['id'=>7,'ref'=>'HS-2026-0007','initials'=>'DK','voyageur'=>'Danielle Kanga','hebergement'=>'Hôtel Grand Confort PMR — Accra','date_arrivee'=>'01/05/2026','date_depart'=>'07/05/2026','nb_nuits'=>6,'statut'=>'Confirmée','montant'=>'175 000 F','devise'=>'XOF','created_at'=>'14/04/2026'],
-            ['id'=>8,'ref'=>'HS-2026-0008','initials'=>'MB','voyageur'=>'Mamadou Baldé','hebergement'=>'Hôtel Azur Accessible — Dakar','date_arrivee'=>'10/05/2026','date_depart'=>'16/05/2026','nb_nuits'=>6,'statut'=>'En attente','montant'=>'192 000 F','devise'=>'XOF','created_at'=>'15/04/2026'],
-        ];
-    }
- 
-    public function index(): \Inertia\Response
-    {
+        $reservations = Reservation::with(['voyageur.user', 'hebergement'])
+            ->orderByDesc('created_at')
+            ->get()
+            ->map(fn ($r) => [
+                'id'          => $r->id,
+                'ref'         => $r->reference,
+                'initials'    => strtoupper(
+                    substr(optional($r->voyageur?->user)->prenom ?? '?', 0, 1) .
+                    substr(optional($r->voyageur?->user)->nom    ?? '?', 0, 1)
+                ),
+                'voyageur'    => trim(
+                    (optional($r->voyageur?->user)->prenom ?? '') . ' ' .
+                    (optional($r->voyageur?->user)->nom    ?? '')
+                ) ?: 'Inconnu',
+                'hebergement' => optional($r->hebergement)->nom ?? 'Inconnu',
+                'date_arrivee'=> $r->date_arrivee->format('d/m/Y'),
+                'date_depart' => $r->date_depart->format('d/m/Y'),
+                'nb_nuits'    => $r->nb_nuits,
+                'statut'      => ucfirst($r->statut),
+                'montant'     => number_format($r->montant_total, 0, ',', ' ') . ' ' . $r->devise,
+                'devise'      => $r->devise,
+                'created_at'  => $r->created_at->format('d/m/Y'),
+            ]);
+
+        $total    = Reservation::count();
+        $revenus  = Reservation::whereIn('statut', ['confirmee', 'terminee'])->sum('montant_total');
+
         return Inertia::render('dashboard/reservations/index', [
-            'reservations' => $this->reservations(),
+            'reservations' => $reservations,
             'stats' => [
-                'total'       => 8,
-                'confirmees'  => 3,
-                'en_attente'  => 3,
-                'terminees'   => 1,
-                'annulees'    => 1,
-                'ce_mois'     => 127,
-                'revenus_mois'=> '1 222 500 F',
+                'total'        => $total,
+                'confirmees'   => Reservation::where('statut', 'confirmee')->count(),
+                'en_attente'   => Reservation::where('statut', 'en_attente')->count(),
+                'terminees'    => Reservation::where('statut', 'terminee')->count(),
+                'annulees'     => Reservation::where('statut', 'annulee')->count(),
+                'revenus_mois' => number_format($revenus, 0, ',', ' ') . ' XOF',
             ],
         ]);
     }
- 
-    public function create(): \Inertia\Response
+
+    // ─────────────────────────────────────────────────────────
+    // GET /reservations/create
+    // ─────────────────────────────────────────────────────────
+    public function create(): Response
     {
-        return Inertia::render('dashboard/reservations/create');
+        return Inertia::render('dashboard/reservations/create', [
+            'hebergements' => Hebergement::where('actif', true)
+                ->orderBy('nom')
+                ->get(['id', 'nom', 'ville', 'pays', 'prix_nuit_min', 'prix_nuit_max', 'devise']),
+            'voyageurs'    => Voyageur::with('user')
+                ->whereNull('deleted_at')
+                ->get()
+                ->map(fn ($v) => [
+                    'id'       => $v->id,
+                    'nom'      => trim(optional($v->user)->prenom . ' ' . optional($v->user)->nom),
+                    'initials' => strtoupper(
+                        substr(optional($v->user)->prenom ?? '?', 0, 1) .
+                        substr(optional($v->user)->nom    ?? '?', 0, 1)
+                    ),
+                    'type_handicap'    => $v->type_handicap,
+                    'niveau_dependance'=> $v->niveau_dependance,
+                ]),
+        ]);
     }
- 
-    public function store(Request $request)
+
+    // ─────────────────────────────────────────────────────────
+    // POST /reservations
+    // ─────────────────────────────────────────────────────────
+    public function store(Request $request): RedirectResponse
     {
-        return redirect()->route('reservations.index');
+        $validated = $request->validate([
+            'voyageur_id'     => 'required|integer|exists:voyageurs,id',
+            'hebergement_id'  => 'required|integer|exists:hebergements,id',
+            'date_arrivee'    => 'required|date|after_or_equal:today',
+            'date_depart'     => 'required|date|after:date_arrivee',
+            'nb_voyageurs'    => 'required|integer|min:1|max:20',
+            'besoins_speciaux'=> 'nullable|string|max:1000',
+            'devise'          => 'nullable|string|max:3',
+        ]);
+
+        $hebergement = Hebergement::findOrFail($validated['hebergement_id']);
+        $arrivee     = \Carbon\Carbon::parse($validated['date_arrivee']);
+        $depart      = \Carbon\Carbon::parse($validated['date_depart']);
+        $nbNuits     = $arrivee->diffInDays($depart);
+        $montant     = $nbNuits * $hebergement->prix_nuit_min;
+
+        $reservation = Reservation::create([
+            'reference'       => Reservation::genererReference(),
+            'voyageur_id'     => $validated['voyageur_id'],
+            'hebergement_id'  => $validated['hebergement_id'],
+            'date_arrivee'    => $validated['date_arrivee'],
+            'date_depart'     => $validated['date_depart'],
+            'nb_nuits'        => $nbNuits,
+            'nb_voyageurs'    => $validated['nb_voyageurs'],
+            'montant_total'   => $montant,
+            'devise'          => $validated['devise'] ?? $hebergement->devise,
+            'statut'          => 'en_attente',
+            'paiement_statut' => 'non_paye',
+            'besoins_speciaux'=> $validated['besoins_speciaux'] ?? null,
+        ]);
+
+        return redirect()
+            ->route('reservations.show', $reservation->id)
+            ->with('success', 'Réservation créée — réf. ' . $reservation->reference);
     }
- 
-    public function show(int $id): \Inertia\Response
+
+    // ─────────────────────────────────────────────────────────
+    // GET /reservations/{id}
+    // ─────────────────────────────────────────────────────────
+    public function show(int $id): Response
     {
-        $resa = collect($this->reservations())->firstWhere('id', $id)
-            ?? $this->reservations()[0];
-        return Inertia::render('dashboard/reservations/show', ['reservation' => $resa]);
+        $r = Reservation::with(['voyageur.user', 'hebergement.equipements'])->findOrFail($id);
+
+        return Inertia::render('dashboard/reservations/show', [
+            'reservation' => [
+                'id'              => $r->id,
+                'ref'             => $r->reference,
+                'initials'        => strtoupper(
+                    substr(optional($r->voyageur?->user)->prenom ?? '?', 0, 1) .
+                    substr(optional($r->voyageur?->user)->nom    ?? '?', 0, 1)
+                ),
+                'voyageur'        => trim(optional($r->voyageur?->user)->prenom . ' ' . optional($r->voyageur?->user)->nom) ?: 'Inconnu',
+                'voyageur_id'     => $r->voyageur_id,
+                'hebergement'     => optional($r->hebergement)->nom ?? 'Inconnu',
+                'hebergement_id'  => $r->hebergement_id,
+                'ville'           => optional($r->hebergement)->ville ?? '',
+                'pays'            => optional($r->hebergement)->pays ?? '',
+                'date_arrivee'    => $r->date_arrivee->format('d/m/Y'),
+                'date_depart'     => $r->date_depart->format('d/m/Y'),
+                'nb_nuits'        => $r->nb_nuits,
+                'nb_voyageurs'    => $r->nb_voyageurs,
+                'statut'          => $r->statut,
+                'paiement_statut' => $r->paiement_statut,
+                'montant'         => number_format($r->montant_total, 0, ',', ' ') . ' ' . $r->devise,
+                'montant_raw'     => $r->montant_total,
+                'devise'          => $r->devise,
+                'besoins_speciaux'=> $r->besoins_speciaux,
+                'created_at'      => $r->created_at->format('d/m/Y'),
+            ],
+        ]);
     }
- 
-    public function updateStatut(Request $request, int $id)
+
+    // ─────────────────────────────────────────────────────────
+    // PUT /reservations/{id}/statut
+    // ─────────────────────────────────────────────────────────
+    public function updateStatut(Request $request, int $id): RedirectResponse
     {
-        return redirect()->route('reservations.index');
+        $request->validate([
+            'statut' => 'required|in:en_attente,confirmee,annulee,terminee,litige',
+        ]);
+
+        Reservation::findOrFail($id)->update(['statut' => $request->statut]);
+
+        return redirect()
+            ->route('reservations.show', $id)
+            ->with('success', 'Statut mis à jour.');
     }
 }
- 

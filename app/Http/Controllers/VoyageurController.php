@@ -2,255 +2,232 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Voyageur;
+use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\Hash;
 use Inertia\Inertia;
+use Inertia\Response;
 
 class VoyageurController extends Controller
 {
-    private function voyageurs(): array
+    public function index(): Response
     {
-        return [
-            [
-                'id'                => 1,
-                'initials'          => 'KD',
-                'nom'               => 'Kofi Diarra',
-                'email'             => 'kofi.d@email.com',
-                'telephone'         => '+221 77 123 45 67',
-                'type_handicap'     => 'moteur',
-                'niveau_dependance' => 3,
-                'reservations'      => 4,
-                'inscription'       => '10/01/2026',
-                'actif'             => true,
-            ],
-            [
-                'id'                => 2,
-                'initials'          => 'AM',
-                'nom'               => 'Amina Mbaye',
-                'email'             => 'amina.m@email.com',
-                'telephone'         => '+212 6 12 34 56 78',
-                'type_handicap'     => 'sensoriel',
-                'niveau_dependance' => 2,
-                'reservations'      => 2,
-                'inscription'       => '15/01/2026',
-                'actif'             => true,
-            ],
-            [
-                'id'                => 3,
-                'initials'          => 'JB',
-                'nom'               => 'Jean-Baptiste Essomba',
-                'email'             => 'jb.essomba@email.com',
-                'telephone'         => '+225 07 12 34 56',
-                'type_handicap'     => 'polyhandicap',
-                'niveau_dependance' => 5,
-                'reservations'      => 3,
-                'inscription'       => '08/02/2026',
-                'actif'             => true,
-            ],
-            [
-                'id'                => 4,
-                'initials'          => 'FT',
-                'nom'               => 'Fatou Touré',
-                'email'             => 'fatou.t@email.com',
-                'telephone'         => '+228 90 12 34 56',
-                'type_handicap'     => 'moteur',
-                'niveau_dependance' => 2,
-                'reservations'      => 6,
-                'inscription'       => '20/02/2026',
-                'actif'             => true,
-            ],
-            [
-                'id'                => 5,
-                'initials'          => 'ON',
-                'nom'               => 'Oumar Ndiaye',
-                'email'             => 'oumar.n@email.com',
-                'telephone'         => '+254 712 345 678',
-                'type_handicap'     => 'cognitif',
-                'niveau_dependance' => 3,
-                'reservations'      => 1,
-                'inscription'       => '01/03/2026',
-                'actif'             => true,
-            ],
-            [
-                'id'                => 6,
-                'initials'          => 'SE',
-                'nom'               => 'Sophie Eteki',
-                'email'             => 'sophie.e@email.com',
-                'telephone'         => '+237 6 12 34 56 78',
-                'type_handicap'     => 'moteur',
-                'niveau_dependance' => 4,
-                'reservations'      => 2,
-                'inscription'       => '05/03/2026',
-                'actif'             => true,
-            ],
-            [
-                'id'                => 7,
-                'initials'          => 'DK',
-                'nom'               => 'Danielle Kanga',
-                'email'             => 'd.kanga@email.com',
-                'telephone'         => '+233 24 123 4567',
-                'type_handicap'     => 'sensoriel',
-                'niveau_dependance' => 1,
-                'reservations'      => 1,
-                'inscription'       => '10/03/2026',
-                'actif'             => true,
-            ],
-            [
-                'id'                => 8,
-                'initials'          => 'MB',
-                'nom'               => 'Mamadou Baldé',
-                'email'             => 'm.balde@email.com',
-                'telephone'         => '+224 620 12 34 56',
-                'type_handicap'     => 'moteur',
-                'niveau_dependance' => 3,
-                'reservations'      => 0,
-                'inscription'       => '01/04/2026',
-                'actif'             => false,
-            ],
-        ];
-    }
-
-    // ─────────────────────────────────────────────────────────────
-    // GET /voyageurs
-    // ─────────────────────────────────────────────────────────────
-    public function index(): \Inertia\Response
-    {
-        $voyageurs = $this->voyageurs();
-        $actifs    = array_filter($voyageurs, fn ($v) => $v['actif']);
-        $inactifs  = array_filter($voyageurs, fn ($v) => !$v['actif']);
+        $voyageurs = Voyageur::with('user')
+            ->withCount('reservations')
+            ->whereNull('deleted_at')
+            ->orderByDesc('created_at')
+            ->get()
+            ->map(fn ($v) => [
+                'id'               => $v->id,
+                'initials'         => strtoupper(
+                    substr(optional($v->user)->prenom ?? '?', 0, 1) .
+                    substr(optional($v->user)->nom    ?? '?', 0, 1)
+                ),
+                'nom'              => trim(optional($v->user)->prenom . ' ' . optional($v->user)->nom) ?: 'Inconnu',
+                'email'            => optional($v->user)->email ?? '',
+                'telephone'        => $v->telephone ?? '',
+                'type_handicap'    => $v->type_handicap,
+                'niveau_dependance'=> $v->niveau_dependance,
+                'reservations'     => $v->reservations_count,
+                'inscription'      => $v->created_at->format('d/m/Y'),
+                'actif'            => (bool) optional($v->user)->actif,
+            ]);
 
         return Inertia::render('dashboard/voyageurs/index', [
             'voyageurs' => $voyageurs,
-            'stats'     => [
-                'total'                => count($voyageurs),
-                'actifs'               => count($actifs),
-                'inactifs'             => count($inactifs),
-                'avec_profil_medical'  => 6, // statique — à connecter Eloquent
+            'stats' => [
+                'total'               => Voyageur::whereNull('deleted_at')->count(),
+                'actifs'              => Voyageur::whereNull('deleted_at')
+                                            ->whereHas('user', fn($q) => $q->where('actif', true))
+                                            ->count(),
+                'inactifs'            => Voyageur::whereNull('deleted_at')
+                                            ->whereHas('user', fn($q) => $q->where('actif', false))
+                                            ->count(),
+                'avec_profil_medical' => 0,
             ],
         ]);
     }
 
-    // ─────────────────────────────────────────────────────────────
-    // GET /voyageurs/create
-    // ─────────────────────────────────────────────────────────────
-    public function create(): \Inertia\Response
+    public function create(): Response
     {
         return Inertia::render('dashboard/voyageurs/create');
     }
 
-    // ─────────────────────────────────────────────────────────────
-    // POST /voyageurs
-    // ─────────────────────────────────────────────────────────────
-    public function store(Request $request): \Illuminate\Http\RedirectResponse
+    public function store(Request $request): RedirectResponse
     {
-        $request->validate([
-            'prenom'              => 'required|string|max:100',
-            'nom'                 => 'required|string|max:100',
-            'email'               => 'required|email|max:255',
-            'telephone'           => 'required|string|max:30',
-            'pays_residence'      => 'required|string|max:5',
-            'type_handicap'       => 'required|string|max:50',
-            'niveau_dependance'   => 'required|integer|min:1|max:5',
-            'contact_urgence_nom' => 'required|string|max:100',
-            'contact_urgence_tel' => 'required|string|max:30',
-            'consentement_rgpd'   => 'accepted', // doit être true
+        $validated = $request->validate([
+            'prenom'               => 'required|string|max:100',
+            'nom'                  => 'required|string|max:100',
+            'email'                => 'required|email|max:255|unique:users,email',
+            'telephone'            => 'required|string|max:30',
+            'date_naissance'       => 'nullable|date',
+            'nationalite'          => 'nullable|string|max:2',
+            'pays_residence'       => 'required|string|max:2',
+            'type_handicap'        => 'required|in:moteur,sensoriel,cognitif,polyhandicap,psychiatrique,autre',
+            'niveau_dependance'    => 'required|integer|min:1|max:5',
+            'equipements'          => 'nullable|array',
+            'contact_urgence_nom'  => 'required|string|max:200',
+            'contact_urgence_tel'  => 'required|string|max:30',
+            'contact_urgence_lien' => 'nullable|string|max:100',
+            'consentement_rgpd'    => 'accepted',
         ]);
 
-        // TODO: enregistrer en base de données
-        // $voyageur = Voyageur::create([...]);
+        $nomComplet = $validated['prenom'] . ' ' . $validated['nom'];
+
+        // 1. Créer le compte user
+        $user = User::create([
+            'name'              => $nomComplet,
+            'prenom'            => $validated['prenom'],
+            'nom'               => $validated['nom'],
+            'email'             => $validated['email'],
+            'password'          => Hash::make(\Illuminate\Support\Str::random(16)),
+            'role'              => 'voyageur',
+            'actif'             => true,
+            'consentement_rgpd' => true,
+            'consentement_le'   => now(),
+        ]);
+
+        // 2. Créer le profil voyageur
+        $voyageur = Voyageur::create([
+            'user_id'              => $user->id,
+            'telephone'            => $validated['telephone'],
+            'date_naissance'       => $validated['date_naissance'] ?? null,
+            'nationalite'          => $validated['nationalite'] ?? null,
+            'pays_residence'       => strtoupper($validated['pays_residence']),
+            'type_handicap'        => $validated['type_handicap'],
+            'niveau_dependance'    => $validated['niveau_dependance'],
+            'contact_urgence_nom'  => $validated['contact_urgence_nom'],
+            'contact_urgence_tel'  => $validated['contact_urgence_tel'],
+            'contact_urgence_lien' => $validated['contact_urgence_lien'] ?? null,
+        ]);
+
+        // 3. Lier équipements — IDs uniquement (ignorer les libellés texte)
+        if (!empty($validated['equipements'])) {
+            $ids = array_values(array_map('intval',
+                array_filter($validated['equipements'], 'is_numeric')
+            ));
+            if (!empty($ids)) {
+                $voyageur->equipements()->sync($ids);
+            }
+        }
 
         return redirect()
-            ->route('voyageurs.index')
-            ->with('success', 'Profil voyageur créé avec succès.');
+            ->route('voyageurs.show', $voyageur->id)
+            ->with('success', 'Profil créé — ' . $nomComplet);
     }
 
-    // ─────────────────────────────────────────────────────────────
-    // GET /voyageurs/{id}
-    // ─────────────────────────────────────────────────────────────
-    public function show(int $id): \Inertia\Response
+    public function show(int $id): Response
     {
-        $v = collect($this->voyageurs())->firstWhere('id', $id)
-            ?? $this->voyageurs()[0];
+        $v = Voyageur::with([
+            'user',
+            'reservations.hebergement',
+            'aidants.user',
+        ])->findOrFail($id);
 
         return Inertia::render('dashboard/voyageurs/show', [
-            'voyageur'     => $v,
-            'reservations' => [
-                [
-                    'ref'          => 'HS-2026-0001',
-                    'hebergement'  => 'Hôtel Azur Accessible — Dakar',
-                    'dates'        => '12–18 avr 2026',
-                    'statut'       => 'Terminée',
-                    'montant'      => '186 000 F',
-                ],
-                [
-                    'ref'          => 'HS-2026-0007',
-                    'hebergement'  => 'Hôtel Grand Confort PMR — Accra',
-                    'dates'        => '1–7 mai 2026',
-                    'statut'       => 'Confirmée',
-                    'montant'      => '175 000 F',
-                ],
+            'voyageur' => [
+                'id'               => $v->id,
+                'initials'         => strtoupper(
+                    substr(optional($v->user)->prenom ?? '?', 0, 1) .
+                    substr(optional($v->user)->nom    ?? '?', 0, 1)
+                ),
+                'nom'              => trim(optional($v->user)->prenom . ' ' . optional($v->user)->nom) ?: 'Inconnu',
+                'email'            => optional($v->user)->email ?? '',
+                'telephone'        => $v->telephone ?? '',
+                'type_handicap'    => $v->type_handicap,
+                'niveau_dependance'=> $v->niveau_dependance,
+                'reservations'     => $v->reservations()->count(),
+                'inscription'      => $v->created_at->format('d/m/Y'),
+                'actif'            => (bool) optional($v->user)->actif,
             ],
-            'aidants' => [
-                [
-                    'nom'       => 'Adja Diarra',
-                    'lien'      => 'Épouse',
-                    'telephone' => '+221 77 987 65 43',
-                ],
-            ],
+            'reservations' => $v->reservations->map(fn ($r) => [
+                'ref'         => $r->reference,
+                'hebergement' => optional($r->hebergement)->nom ?? 'Inconnu',
+                'dates'       => $r->date_arrivee->format('d M') . '–' . $r->date_depart->format('d M Y'),
+                'statut'      => ucfirst($r->statut),
+                'montant'     => number_format($r->montant_total, 0, ',', ' ') . ' ' . $r->devise,
+            ]),
+            'aidants' => $v->aidants->map(fn ($a) => [
+                'nom'       => trim(optional($a->user)->prenom . ' ' . optional($a->user)->nom) ?: 'Inconnu',
+                'lien'      => $a->lien_parente ?? '',
+                'telephone' => $a->telephone ?? '',
+            ]),
         ]);
     }
 
-    // ─────────────────────────────────────────────────────────────
-    // GET /voyageurs/{id}/edit
-    // ─────────────────────────────────────────────────────────────
-    public function edit(int $id): \Inertia\Response
+    public function edit(int $id): Response
     {
-        $v = collect($this->voyageurs())->firstWhere('id', $id)
-            ?? $this->voyageurs()[0];
+        $v = Voyageur::with('user')->findOrFail($id);
 
         return Inertia::render('dashboard/voyageurs/edit', [
-            'voyageur' => $v,
+            'voyageur' => [
+                'id'                   => $v->id,
+                'prenom'               => optional($v->user)->prenom ?? '',
+                'nom'                  => optional($v->user)->nom ?? '',
+                'email'                => optional($v->user)->email ?? '',
+                'telephone'            => $v->telephone ?? '',
+                'date_naissance'       => $v->date_naissance?->format('Y-m-d'),
+                'nationalite'          => $v->nationalite ?? '',
+                'pays_residence'       => $v->pays_residence ?? '',
+                'type_handicap'        => $v->type_handicap,
+                'niveau_dependance'    => $v->niveau_dependance,
+                'contact_urgence_nom'  => $v->contact_urgence_nom ?? '',
+                'contact_urgence_tel'  => $v->contact_urgence_tel ?? '',
+                'contact_urgence_lien' => $v->contact_urgence_lien ?? '',
+            ],
         ]);
     }
 
-    // ─────────────────────────────────────────────────────────────
-    // PUT /voyageurs/{id}
-    // ─────────────────────────────────────────────────────────────
-    public function update(Request $request, int $id): \Illuminate\Http\RedirectResponse
+    public function update(Request $request, int $id): RedirectResponse
     {
-        // TODO: valider et mettre à jour en base
+        $v = Voyageur::with('user')->findOrFail($id);
+
+        $validated = $request->validate([
+            'prenom'               => 'required|string|max:100',
+            'nom'                  => 'required|string|max:100',
+            'telephone'            => 'required|string|max:30',
+            'date_naissance'       => 'nullable|date',
+            'nationalite'          => 'nullable|string|max:2',
+            'pays_residence'       => 'required|string|max:2',
+            'type_handicap'        => 'required|in:moteur,sensoriel,cognitif,polyhandicap,psychiatrique,autre',
+            'niveau_dependance'    => 'required|integer|min:1|max:5',
+            'contact_urgence_nom'  => 'required|string|max:200',
+            'contact_urgence_tel'  => 'required|string|max:30',
+            'contact_urgence_lien' => 'nullable|string|max:100',
+        ]);
+
+        optional($v->user)->update([
+            'name'   => $validated['prenom'] . ' ' . $validated['nom'],
+            'prenom' => $validated['prenom'],
+            'nom'    => $validated['nom'],
+        ]);
+
+        $v->update([
+            'telephone'            => $validated['telephone'],
+            'date_naissance'       => $validated['date_naissance'] ?? null,
+            'nationalite'          => $validated['nationalite'] ?? null,
+            'pays_residence'       => strtoupper($validated['pays_residence']),
+            'type_handicap'        => $validated['type_handicap'],
+            'niveau_dependance'    => $validated['niveau_dependance'],
+            'contact_urgence_nom'  => $validated['contact_urgence_nom'],
+            'contact_urgence_tel'  => $validated['contact_urgence_tel'],
+            'contact_urgence_lien' => $validated['contact_urgence_lien'] ?? null,
+        ]);
+
         return redirect()
-            ->route('voyageurs.show', $id)
+            ->route('voyageurs.show', $v->id)
             ->with('success', 'Profil mis à jour.');
     }
 
-    // ─────────────────────────────────────────────────────────────
-    // PATCH /voyageurs/{id}/toggle-actif
-    // ─────────────────────────────────────────────────────────────
-    public function toggleActif(int $id): \Illuminate\Http\RedirectResponse
+    public function toggleActif(int $id): RedirectResponse
     {
-        // TODO: basculer actif/inactif en base
+        $v = Voyageur::with('user')->findOrFail($id);
+        optional($v->user)->update(['actif' => !optional($v->user)->actif]);
+
         return redirect()
-            ->route('voyageurs.show', $id)
-            ->with('success', 'Statut du voyageur mis à jour.');
+            ->route('voyageurs.show', $v->id)
+            ->with('success', 'Statut mis à jour.');
     }
 }
-
-
-/*
-|--------------------------------------------------------------------------
-| ROUTES À COPIER DANS web.php
-|--------------------------------------------------------------------------
-|
-| ⚠️  La route /voyageurs/create DOIT être placée AVANT /voyageurs/{id}
-|     sinon Laravel traite "create" comme un identifiant numérique.
-|
-*/
-
-// ── Voyageurs ─────────────────────────────────────────────────────────────────
-// Route::get('/voyageurs',                      [VoyageurController::class, 'index'])       ->name('voyageurs.index');
-// Route::get('/voyageurs/create',               [VoyageurController::class, 'create'])      ->name('voyageurs.create');
-// Route::post('/voyageurs',                     [VoyageurController::class, 'store'])       ->name('voyageurs.store');
-// Route::get('/voyageurs/{id}',                 [VoyageurController::class, 'show'])        ->name('voyageurs.show');
-// Route::get('/voyageurs/{id}/edit',            [VoyageurController::class, 'edit'])        ->name('voyageurs.edit');
-// Route::put('/voyageurs/{id}',                 [VoyageurController::class, 'update'])      ->name('voyageurs.update');
-// Route::patch('/voyageurs/{id}/toggle-actif',  [VoyageurController::class, 'toggleActif'])->name('voyageurs.toggle-actif');

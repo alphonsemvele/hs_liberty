@@ -2,148 +2,109 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\TransportAdapte;
+use App\Models\Voyageur;
+use App\Models\Reservation;
 use Illuminate\Http\Request;
+use Illuminate\Http\RedirectResponse;
 use Inertia\Inertia;
+use Inertia\Response;
 
 class TransportController extends Controller
 {
-    private function transports(): array
+    // GET /transports
+    public function index(): Response
     {
-        return [
-            [
-                'id'               => 1,
-                'ref'              => 'TR-2026-001',
-                'voyageur'         => 'Kofi Diarra',
-                'voyageur_initials'=> 'KD',
-                'type_vehicule'    => 'Minibus PMR',
-                'equipements'      => ['Rampe électrique', 'Ceinture fauteuil'],
-                'prestataire'      => 'AccessMobil Dakar',
-                'ville_depart'     => 'Aéroport LSS — Dakar',
-                'ville_arrivee'    => 'Hôtel Azur Accessible',
-                'date_heure'       => '12/04/2026 14:30',
-                'statut'           => 'Terminé',
-                'montant'          => '12 000 F',
-            ],
-            [
-                'id'               => 2,
-                'ref'              => 'TR-2026-002',
-                'voyageur'         => 'Amina Mbaye',
-                'voyageur_initials'=> 'AM',
-                'type_vehicule'    => 'Berline adaptée',
-                'equipements'      => ['Siège pivotant', 'Poignée de maintien'],
-                'prestataire'      => 'Maroc Accessible',
-                'ville_depart'     => 'Aéroport CMN — Casablanca',
-                'ville_arrivee'    => 'Résidence PMR Casablanca',
-                'date_heure'       => '15/04/2026 16:00',
-                'statut'           => 'Confirmé',
-                'montant'          => '18 000 F',
-            ],
-            [
-                'id'               => 3,
-                'ref'              => 'TR-2026-003',
-                'voyageur'         => 'Fatou Touré',
-                'voyageur_initials'=> 'FT',
-                'type_vehicule'    => 'Van PMR',
-                'equipements'      => ['Lève-personne', 'Rampe', 'Brancard'],
-                'prestataire'      => 'Lomé Mobilité Plus',
-                'ville_depart'     => 'Gare ferroviaire — Lomé',
-                'ville_arrivee'    => 'Hôtel Liberté',
-                'date_heure'       => '20/04/2026 10:15',
-                'statut'           => 'En attente',
-                'montant'          => '8 500 F',
-            ],
-            [
-                'id'               => 4,
-                'ref'              => 'TR-2026-004',
-                'voyageur'         => 'Sophie Eteki',
-                'voyageur_initials'=> 'SE',
-                'type_vehicule'    => 'Berline adaptée',
-                'equipements'      => ['Siège pivotant'],
-                'prestataire'      => 'Atlas Transport PMR',
-                'ville_depart'     => 'Aéroport RAK — Marrakech',
-                'ville_arrivee'    => 'Riad Accessible',
-                'date_heure'       => '25/04/2026 19:45',
-                'statut'           => 'En attente',
-                'montant'          => '22 000 F',
-            ],
-            [
-                'id'               => 5,
-                'ref'              => 'TR-2026-005',
-                'voyageur'         => 'Jean-Baptiste Essomba',
-                'voyageur_initials'=> 'JB',
-                'type_vehicule'    => 'Minibus PMR',
-                'equipements'      => ['Rampe électrique', 'Ceinture fauteuil', 'O₂'],
-                'prestataire'      => 'CI Mobilité Adaptée',
-                'ville_depart'     => 'Hôtel',
-                'ville_arrivee'    => 'Aéroport ABJ — Abidjan',
-                'date_heure'       => '14/04/2026 08:00',
-                'statut'           => 'Terminé',
-                'montant'          => '14 000 F',
-            ],
-            [
-                'id'               => 6,
-                'ref'              => 'TR-2026-006',
-                'voyageur'         => 'Danielle Kanga',
-                'voyageur_initials'=> 'DK',
-                'type_vehicule'    => 'Van PMR',
-                'equipements'      => ['Lève-personne', 'Fauteuil roulant de prêt'],
-                'prestataire'      => 'GH AccessTransport',
-                'ville_depart'     => 'Aéroport ACC — Accra',
-                'ville_arrivee'    => 'Hôtel Grand Confort PMR',
-                'date_heure'       => '01/05/2026 12:00',
-                'statut'           => 'En cours',
-                'montant'          => '19 500 F',
-            ],
-        ];
-    }
- 
-    public function index(): \Inertia\Response
-    {
-        $transports = $this->transports();
-        $statuts    = array_column($transports, 'statut');
- 
+        $transports = TransportAdapte::with(['voyageur.user'])
+            ->orderByDesc('created_at')
+            ->get()
+            ->map(fn ($t) => [
+                'id'            => $t->id,
+                'reference'     => $t->reference,
+                'voyageur'      => trim(optional($t->voyageur?->user)->prenom . ' ' . optional($t->voyageur?->user)->nom) ?: 'Inconnu',
+                'initials'      => strtoupper(
+                    substr(optional($t->voyageur?->user)->prenom ?? '?', 0, 1) .
+                    substr(optional($t->voyageur?->user)->nom    ?? '?', 0, 1)
+                ),
+                'type_vehicule' => $t->type_vehicule,
+                'ville_depart'  => $t->ville_depart,
+                'ville_arrivee' => $t->ville_arrivee,
+                'date_depart'   => $t->date_heure?->format('d/m/Y H:i') ?? '—',
+                'statut'        => $t->statut,
+                'montant'       => $t->montant > 0 ? number_format($t->montant, 0, ',', ' ') . ' ' . $t->devise : '—',
+            ]);
+
         return Inertia::render('dashboard/transports/index', [
             'transports' => $transports,
-            'stats'      => [
-                'total'      => count($transports),
-                'confirmes'  => count(array_filter($statuts, fn ($s) => $s === 'Confirmé')),
-                'en_attente' => count(array_filter($statuts, fn ($s) => $s === 'En attente')),
-                'en_cours'   => count(array_filter($statuts, fn ($s) => $s === 'En cours')),
-                'termines'   => count(array_filter($statuts, fn ($s) => $s === 'Terminé')),
+            'stats' => [
+                'total'     => TransportAdapte::count(),
+                'planifies' => TransportAdapte::where('statut', 'en_attente')->count(),
+                'en_cours'  => TransportAdapte::where('statut', 'en_cours')->count(),
+                'termines'  => TransportAdapte::where('statut', 'termine')->count(),
             ],
         ]);
     }
- 
-    public function create(): \Inertia\Response
+
+    // GET /transports/create
+    public function create(): Response
     {
-        return Inertia::render('dashboard/transports/create');
-    }
- 
-    public function store(Request $request)
-    {
-        // TODO: valider et enregistrer en base de données
-        return redirect()->route('transports.index');
-    }
- 
-    public function show(int $id): \Inertia\Response
-    {
-        $transport = collect($this->transports())->firstWhere('id', $id)
-            ?? $this->transports()[0];
- 
-        return Inertia::render('transports/show', [
-            'transport' => $transport,
+        return Inertia::render('dashboard/transports/create', [
+            'voyageurs' => Voyageur::with('user')->whereNull('deleted_at')->get()->map(fn ($v) => [
+                'id'               => $v->id,
+                'nom'              => trim(optional($v->user)->prenom . ' ' . optional($v->user)->nom) ?: 'Inconnu',
+                'type_handicap'    => $v->type_handicap,
+                'niveau_dependance'=> $v->niveau_dependance,
+            ]),
         ]);
     }
- 
-    public function updateStatut(Request $request, int $id)
+
+    // POST /transports
+    public function store(Request $request): RedirectResponse
     {
-        // TODO: mettre à jour le statut en base
-        return redirect()->route('transports.index');
+        $request->validate([
+            'id_voyageur'    => 'required|integer|exists:voyageurs,id',
+            'type_vehicule'  => 'required|in:berline,van,minibus,ambulance_legere',
+            'ville_depart'   => 'required|string|max:150',
+            'adresse_depart' => 'required|string|max:500',
+            'ville_arrivee'  => 'required|string|max:150',
+            'adresse_arrivee'=> 'required|string|max:500',
+            'date_heure'     => 'required|date',
+            'equipements'    => 'nullable|array',
+            'instructions'   => 'nullable|string|max:2000',
+            'montant'        => 'nullable|numeric|min:0',
+            'devise'         => 'nullable|string|max:3',
+        ]);
+
+        $voyageur = Voyageur::with('user')->findOrFail($request->id_voyageur);
+
+        TransportAdapte::create([
+            'reference'        => 'TR-' . date('Y') . '-' . str_pad(TransportAdapte::count() + 1, 4, '0', STR_PAD_LEFT),
+            'voyageur_id'      => $voyageur->id,
+            'user_id'          => $voyageur->user_id,
+            'type_vehicule'    => $request->type_vehicule,
+            'ville_depart'     => $request->ville_depart,
+            'adresse_depart'   => $request->adresse_depart,
+            'ville_arrivee'    => $request->ville_arrivee,
+            'adresse_arrivee'  => $request->adresse_arrivee,
+            'date_heure'       => $request->date_heure,
+            'equipements_json' => $request->equipements ?? [],
+            'instructions'     => $request->instructions,
+            'montant'          => $request->montant ?? 0,
+            'devise'           => $request->devise ?? 'XOF',
+            'statut'           => 'en_attente',
+        ]);
+
+        return redirect()
+            ->route('transports.index')
+            ->with('success', 'Transport réservé.');
     }
- 
-    public function destroy(int $id)
+
+    // PATCH /transports/{id}/statut
+    public function updateStatut(Request $request, int $id): RedirectResponse
     {
-        // TODO: annuler / supprimer
-        return redirect()->route('transports.index');
+        $request->validate(['statut' => 'required|in:en_attente,confirme,en_cours,termine,annule']);
+        TransportAdapte::findOrFail($id)->update(['statut' => $request->statut]);
+
+        return redirect()->route('transports.index')->with('success', 'Statut mis à jour.');
     }
 }

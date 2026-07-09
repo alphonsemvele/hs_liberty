@@ -3,11 +3,10 @@ import DashboardLayout from '../layout';
 
 interface Hebergement {
     id: number; nom: string; ville: string; pays: string;
-    niveau_certif: string | null; note: number; reservations: number;
-    actif: boolean; created_at: string;
+    niveau_certif: string | null; note: number;
+    reservations: number; actif: boolean; created_at: string;
 }
 interface Stats { total: number; certifies: number; non_certifies: number; inactifs: number; }
-interface Props { hebergements: Hebergement[]; stats: Stats; }
 
 const NIVEAU_STYLE: Record<string, string> = {
     'Excellence':      'bg-emerald-100 text-emerald-700 border-emerald-200',
@@ -15,17 +14,20 @@ const NIVEAU_STYLE: Record<string, string> = {
     'Accessible':      'bg-teal-100 text-teal-700 border-teal-200',
 };
 
-export default function HebergementsIndex({ hebergements = [], stats = { total:0, certifies:0, non_certifies:0, inactifs:0 } }: Partial<Props>) {
+export default function HebergementsIndex({
+    hebergements = [],
+    stats = { total: 0, certifies: 0, non_certifies: 0, inactifs: 0 },
+}: { hebergements?: Hebergement[]; stats?: Stats }) {
     return (
         <DashboardLayout title="Hébergements" subtitle="Gérez les établissements certifiés">
 
             {/* Stats */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                 {[
-                    { label: 'Total',          value: stats.total,         color: 'text-slate-900' },
-                    { label: 'Certifiés',      value: stats.certifies,     color: 'text-emerald-600' },
-                    { label: 'Non certifiés',  value: stats.non_certifies, color: 'text-amber-600' },
-                    { label: 'Inactifs',       value: stats.inactifs,      color: 'text-slate-400' },
+                    { label: 'Total',         value: stats.total,         color: 'text-slate-900'   },
+                    { label: 'Certifiés',     value: stats.certifies,     color: 'text-emerald-600' },
+                    { label: 'Non certifiés', value: stats.non_certifies, color: 'text-amber-600'   },
+                    { label: 'Inactifs',      value: stats.inactifs,      color: 'text-slate-400'   },
                 ].map(s => (
                     <div key={s.label} className="bg-white rounded-2xl border border-slate-100 p-5">
                         <p className="text-xs text-slate-400 font-medium mb-1">{s.label}</p>
@@ -35,7 +37,7 @@ export default function HebergementsIndex({ hebergements = [], stats = { total:0
             </div>
 
             {/* Toolbar */}
-            <div className="flex items-center justify-between gap-4 mb-4">
+            <div className="flex items-center justify-between gap-4 mb-4 flex-wrap">
                 <div className="flex items-center gap-3">
                     <div className="relative">
                         <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -43,7 +45,7 @@ export default function HebergementsIndex({ hebergements = [], stats = { total:0
                         </svg>
                         <input placeholder="Rechercher…" className="pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-xl bg-white focus:outline-none focus:border-emerald-400 w-64"/>
                     </div>
-                    <select className="text-sm border border-slate-200 rounded-xl bg-white px-3 py-2 focus:outline-none focus:border-emerald-400 text-slate-600">
+                    <select className="text-sm border border-slate-200 rounded-xl bg-white px-3 py-2 focus:outline-none text-slate-600">
                         <option>Tous les niveaux</option>
                         <option>Excellence</option>
                         <option>Accessible Plus</option>
@@ -62,21 +64,17 @@ export default function HebergementsIndex({ hebergements = [], stats = { total:0
                 <div className="overflow-x-auto">
                     <table className="w-full">
                         <thead className="bg-slate-50 border-b border-slate-100">
-                            <tr>
-                                {['Établissement','Ville / Pays','Certification','Note','Réservations','Statut','Actions'].map(h => (
-                                    <th key={h} className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">{h}</th>
-                                ))}
-                            </tr>
+                            <tr>{['Établissement','Ville / Pays','Certification','Note','Réservations','Statut','Actions'].map(h => (
+                                <th key={h} className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">{h}</th>
+                            ))}</tr>
                         </thead>
                         <tbody className="divide-y divide-slate-50">
                             {hebergements.map(h => (
-                                <tr key={h.id} className="hover:bg-slate-50 transition-colors">
+                                <tr key={h.id} className="hover:bg-slate-50 transition-colors group">
                                     <td className="px-5 py-4">
                                         <div className="flex items-center gap-3">
-                                            <div className="w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center text-xs font-black text-emerald-700 flex-shrink-0">
-                                                {h.nom.charAt(0)}
-                                            </div>
-                                            <span className="font-semibold text-slate-900 text-sm">{h.nom}</span>
+                                            <div className="w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center text-xs font-black text-emerald-700 flex-shrink-0">{h.nom.charAt(0)}</div>
+                                            <span className="font-semibold text-slate-900 text-sm group-hover:text-emerald-600 transition-colors">{h.nom}</span>
                                         </div>
                                     </td>
                                     <td className="px-5 py-4">
@@ -85,9 +83,7 @@ export default function HebergementsIndex({ hebergements = [], stats = { total:0
                                     </td>
                                     <td className="px-5 py-4">
                                         {h.niveau_certif ? (
-                                            <span className={`inline-flex items-center text-xs font-semibold px-2.5 py-1 rounded-full border ${NIVEAU_STYLE[h.niveau_certif] ?? 'bg-slate-100 text-slate-600 border-slate-200'}`}>
-                                                {h.niveau_certif}
-                                            </span>
+                                            <span className={`inline-flex items-center text-xs font-semibold px-2.5 py-1 rounded-full border ${NIVEAU_STYLE[h.niveau_certif] ?? 'bg-slate-100 text-slate-600 border-slate-200'}`}>{h.niveau_certif}</span>
                                         ) : (
                                             <span className="text-xs text-slate-400 italic">Non certifié</span>
                                         )}
@@ -100,9 +96,7 @@ export default function HebergementsIndex({ hebergements = [], stats = { total:0
                                             </div>
                                         ) : <span className="text-xs text-slate-300">—</span>}
                                     </td>
-                                    <td className="px-5 py-4">
-                                        <span className="text-sm font-semibold text-slate-700">{h.reservations}</span>
-                                    </td>
+                                    <td className="px-5 py-4"><span className="text-sm font-semibold text-slate-700">{h.reservations}</span></td>
                                     <td className="px-5 py-4">
                                         <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border ${h.actif ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-slate-100 text-slate-400 border-slate-200'}`}>
                                             <span className={`w-1.5 h-1.5 rounded-full ${h.actif ? 'bg-emerald-500' : 'bg-slate-300'}`}/>
@@ -110,7 +104,7 @@ export default function HebergementsIndex({ hebergements = [], stats = { total:0
                                         </span>
                                     </td>
                                     <td className="px-5 py-4">
-                                        <div className="flex items-center gap-2">
+                                        <div className="flex items-center gap-3">
                                             <Link href={`/hebergements/${h.id}`} className="text-xs font-medium text-slate-500 hover:text-emerald-600 transition-colors">Voir</Link>
                                             <Link href={`/hebergements/${h.id}/edit`} className="text-xs font-medium text-slate-500 hover:text-emerald-600 transition-colors">Modifier</Link>
                                         </div>
@@ -120,14 +114,25 @@ export default function HebergementsIndex({ hebergements = [], stats = { total:0
                         </tbody>
                     </table>
                 </div>
-                <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-between">
-                    <p className="text-xs text-slate-400">{hebergements.length} établissement(s)</p>
-                    <div className="flex gap-1">
-                        <button className="px-3 py-1.5 text-xs border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-50">Préc.</button>
-                        <button className="px-3 py-1.5 text-xs bg-emerald-600 text-white rounded-lg">1</button>
-                        <button className="px-3 py-1.5 text-xs border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-50">Suiv.</button>
+                {hebergements.length === 0 && (
+                    <div className="flex flex-col items-center justify-center py-16 text-center">
+                        <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center mb-3">
+                            <svg className="w-6 h-6 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16M3 21h18"/></svg>
+                        </div>
+                        <p className="text-sm font-semibold text-slate-500 mb-1">Aucun hébergement enregistré</p>
+                        <Link href="/hebergements/create" className="mt-3 text-xs font-semibold text-emerald-600 hover:text-emerald-700">+ Ajouter →</Link>
                     </div>
-                </div>
+                )}
+                {hebergements.length > 0 && (
+                    <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-between">
+                        <p className="text-xs text-slate-400">{hebergements.length} établissement(s)</p>
+                        <div className="flex gap-1">
+                            <button className="px-3 py-1.5 text-xs border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-50">Préc.</button>
+                            <button className="px-3 py-1.5 text-xs bg-emerald-600 text-white rounded-lg">1</button>
+                            <button className="px-3 py-1.5 text-xs border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-50">Suiv.</button>
+                        </div>
+                    </div>
+                )}
             </div>
         </DashboardLayout>
     );
